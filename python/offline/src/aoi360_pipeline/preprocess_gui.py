@@ -53,6 +53,7 @@ class PreprocessGuiApp:
         self.maps_dir_var = StringVar()
         self.metadata_dir_var = StringVar()
         self.manifest_path_var = StringVar()
+        self.runtime_pack_path_var = StringVar()
 
         self.current_stage_label_var = StringVar(value="Idle")
         self.current_stage_detail_var = StringVar(value="Select a video and start preprocessing.")
@@ -127,6 +128,7 @@ class PreprocessGuiApp:
         self._add_output_row(right_column, "AOI maps", self.maps_dir_var, 2)
         self._add_output_row(right_column, "AOI metadata", self.metadata_dir_var, 3)
         self._add_output_row(right_column, "Manifest", self.manifest_path_var, 4)
+        self._add_output_row(right_column, "Runtime pack", self.runtime_pack_path_var, 5)
 
         actions = ttk.Frame(self.root, padding=(18, 0, 18, 12))
         actions.grid(row=2, column=0, sticky="nsew")
@@ -210,6 +212,7 @@ class PreprocessGuiApp:
         self.maps_dir_var.set(str(resolved.output_maps_dir))
         self.metadata_dir_var.set(str(resolved.output_metadata_dir))
         self.manifest_path_var.set(str(resolved.manifest_path))
+        self.runtime_pack_path_var.set(str(resolved.runtime_pack_path))
 
     def _start_preprocessing(self) -> None:
         if self.worker_thread is not None and self.worker_thread.is_alive():

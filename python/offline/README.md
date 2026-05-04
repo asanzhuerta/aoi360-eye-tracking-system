@@ -20,6 +20,7 @@ The pipeline now also includes:
   - sparse AOI keyframes every `30` video frames by default
   - lighter AOI maps at `1024x512`
   - a baked `270` degree yaw offset so Unity does not need to compensate it every frame
+  - a binary `RGB24` runtime pack so Unity can avoid decoding PNG keyframes during playback
 
 ## Install
 
@@ -90,6 +91,7 @@ The GUI lets you:
 - AOI maps: `data/processed/id_maps/`
 - AOI keyframes: `data/processed/metadata/`
 - AOI sequence manifest: `data/processed/metadata/<video_name>_aoi_sequence_manifest.json`
+- AOI runtime pack: `data/processed/metadata/<video_name>_aoi_sequence_rgb24.bin`
 
 The rebuild script and GUI now auto-derive these paths from the selected video stem, so a file such as `my_scene.mp4` will produce:
 
@@ -121,12 +123,14 @@ For per-frame AOI maps, the recommended handoff structure is:
 - PNG sequence staged under `Assets/StreamingAssets/AOIMaps/<video_name>/maps/`
 - lightweight keyframe JSON sequence staged under `Assets/StreamingAssets/AOIMaps/<video_name>/keyframes/`
 - one sequence manifest JSON under `Assets/StreamingAssets/AOIMaps/<video_name>/`
+- one binary runtime pack under `Assets/StreamingAssets/AOIMaps/<video_name>/`
 
 In this format:
 
 - AOI colors and semantic definitions are stored once in the manifest
 - each keyframe JSON only stores which AOI ids are present in that frame plus their boxes/confidence
 - each per-frame PNG uses the persistent color assigned to that AOI id across time
+- the runtime pack stores each AOI keyframe as raw `RGB24` bytes for fast Unity uploads into a reused texture
 
 Example PowerShell copy commands:
 
@@ -136,6 +140,7 @@ New-Item -ItemType Directory -Force -Path unity\AOI360Runtime\Assets\StreamingAs
 Copy-Item data\processed\id_maps\video_360\*.png unity\AOI360Runtime\Assets\StreamingAssets\AOIMaps\video_360\maps\
 Copy-Item data\processed\metadata\video_360\*.json unity\AOI360Runtime\Assets\StreamingAssets\AOIMaps\video_360\keyframes\
 Copy-Item data\processed\metadata\video_360_aoi_sequence_manifest.json unity\AOI360Runtime\Assets\StreamingAssets\AOIMaps\video_360\
+Copy-Item data\processed\metadata\video_360_aoi_sequence_rgb24.bin unity\AOI360Runtime\Assets\StreamingAssets\AOIMaps\video_360\
 ```
 
-That per-frame layout is now consumed by the current Unity runtime loader keyed by `VideoPlayer.frame`, and it is the preferred handoff path for Phase 0 playback tests.
+That per-frame layout is now consumed by the current Unity runtime loader keyed by `VideoPlayer.frame`, and the binary runtime pack is the preferred fast path for Phase 0 playback tests on standalone VR hardware.

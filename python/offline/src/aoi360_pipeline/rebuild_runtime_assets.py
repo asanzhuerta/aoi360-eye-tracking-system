@@ -21,6 +21,7 @@ class RuntimeBuildPaths:
     output_maps_dir: Path
     output_metadata_dir: Path
     manifest_path: Path
+    runtime_pack_path: Path
 
 
 def find_repo_root(start: str | Path | None = None) -> Path:
@@ -65,6 +66,9 @@ def derive_runtime_build_paths(
         if manifest_path is not None
         else root / "data" / "processed" / "metadata" / f"{video_stem}_aoi_sequence_manifest.json"
     )
+    resolved_runtime_pack_path = resolved_manifest_path.with_name(
+        resolved_manifest_path.stem.replace("_manifest", "_rgb24") + ".bin"
+    )
 
     return RuntimeBuildPaths(
         frames_dir=resolved_frames_dir,
@@ -72,6 +76,7 @@ def derive_runtime_build_paths(
         output_maps_dir=resolved_output_maps_dir,
         output_metadata_dir=resolved_output_metadata_dir,
         manifest_path=resolved_manifest_path,
+        runtime_pack_path=resolved_runtime_pack_path,
     )
 
 
@@ -137,6 +142,7 @@ def rebuild_runtime_assets(
     output_maps_dir = resolved_paths.output_maps_dir
     output_metadata_dir = resolved_paths.output_metadata_dir
     manifest_path = resolved_paths.manifest_path
+    runtime_pack_path = resolved_paths.runtime_pack_path
 
     if clean:
         _emit_log(log_callback, "[rebuild_runtime_assets] Cleaning previously generated assets.")
@@ -146,6 +152,7 @@ def rebuild_runtime_assets(
             output_maps_dir,
             output_metadata_dir,
             manifest_path,
+            runtime_pack_path,
         ])
 
     _emit_log(log_callback, f"[rebuild_runtime_assets] Video selected: {video_path}")
@@ -154,6 +161,7 @@ def rebuild_runtime_assets(
     _emit_log(log_callback, f"[rebuild_runtime_assets] AOI maps directory: {output_maps_dir}")
     _emit_log(log_callback, f"[rebuild_runtime_assets] AOI metadata directory: {output_metadata_dir}")
     _emit_log(log_callback, f"[rebuild_runtime_assets] Manifest path: {manifest_path}")
+    _emit_log(log_callback, f"[rebuild_runtime_assets] Runtime pack path: {runtime_pack_path}")
 
     _emit_progress(progress_callback, "extract", 0, 1, "Starting frame extraction.")
     extraction_summary = extract_frames(
@@ -194,6 +202,7 @@ def rebuild_runtime_assets(
         output_width=output_width,
         output_height=output_height,
         yaw_offset_degrees=yaw_offset_degrees,
+        runtime_pack_path=runtime_pack_path,
         progress_callback=lambda current, total, message: _emit_progress(
             progress_callback, "build", current, total, message
         ),
@@ -210,6 +219,7 @@ def rebuild_runtime_assets(
         "maps_dir": str(output_maps_dir),
         "metadata_dir": str(output_metadata_dir),
         "manifest_path": str(manifest_path),
+        "runtime_pack_path": str(runtime_pack_path),
         "frames_read": extraction_summary["frames_read"],
         "frames_saved": extraction_summary["frames_saved"],
         "detections_count": int(len(detections)),
@@ -314,6 +324,7 @@ def main() -> None:
     print(f"AOI maps dir: {summary['maps_dir']}")
     print(f"AOI metadata dir: {summary['metadata_dir']}")
     print(f"Manifest: {summary['manifest_path']}")
+    print(f"Runtime pack: {summary['runtime_pack_path']}")
 
 
 if __name__ == "__main__":

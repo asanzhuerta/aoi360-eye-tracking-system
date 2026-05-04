@@ -33,6 +33,16 @@ class TrackState:
     keyframe_count: int = 0
 
 
+def build_default_runtime_pack_path(manifest_path: str | Path | None, video_name: str) -> Path:
+    if manifest_path is not None:
+        manifest_path = Path(manifest_path)
+        return manifest_path.with_name(
+            manifest_path.stem.replace("_manifest", "_rgb24") + ".bin"
+        )
+
+    return Path("data") / "processed" / "metadata" / f"{Path(video_name).stem}_aoi_sequence_rgb24.bin"
+
+
 def _emit_log(log_callback: LogCallback | None, message: str) -> None:
     if log_callback is not None:
         log_callback(message)
@@ -234,6 +244,8 @@ def build_aoi_sequence(
     output_width: int | None = None,
     output_height: int | None = None,
     yaw_offset_degrees: float = 0.0,
+    runtime_pack_path: str | Path | None = None,
+    write_runtime_pack: bool = True,
     progress_callback: ProgressCallback | None = None,
     log_callback: LogCallback | None = None,
 ) -> dict[str, object]:
@@ -298,93 +310,141 @@ def build_aoi_sequence(
     written_count = 0
     id_map_resolution: list[int] | None = None
     total_frames = len(sequence_frames)
+    resolved_runtime_pack_path: Path | None = None
+    runtime_pack_stream = None
+    runtime_pack_frame_byte_length: int | None = None
     _emit_progress(progress_callback, 0, total_frames, "Preparing AOI keyframes.")
 
-    for processed_index, frame in enumerate(sequence_frames, start=1):
-        frame_index = int(frame["frameIndex"])
-        frame_file = str(frame["frameFile"])
-        frame_stem = Path(frame_file).stem
-        output_map_path = output_maps_dir / f"{frame_stem}_aoi_map.png"
-        output_keyframe_path = output_keyframes_dir / f"{frame_stem}_aoi_keyframe.json"
+    if write_runtime_pack:
+        resolved_runtime_pack_path = build_default_runtime_pack_path(
+            manifest_path=manifest_path,
+            video_name=video_name,
+        ) if runtime_pack_path is None else Path(runtime_pack_path)
+        resolved_runtime_pack_path.parent.mkdir(parents=True, exist_ok=True)
+        runtime_pack_stream = resolved_runtime_pack_path.open("wb")
+        _emit_log(
+            log_callback,
+            f"[build_aoi_sequence] Writing runtime AOI pack to '{resolved_runtime_pack_path}'.",
+        )
 
-        if skip_existing and output_map_path.exists() and output_keyframe_path.exists():
+    try:
+        for processed_index, frame in enumerate(sequence_frames, start=1):
+            frame_index = int(frame["frameIndex"])
+            frame_file = str(frame["frameFile"])
+            frame_stem = Path(frame_file).stem
+            output_map_path = output_maps_dir / f"{frame_stem}_aoi_map.png"
+            output_keyframe_path = output_keyframes_dir / f"{frame_stem}_aoi_keyframe.json"
+
+            if skip_existing and output_map_path.exists() and output_keyframe_path.exists():
+                with Image.open(output_map_path) as existing_map_image:
+                    if id_map_resolution is None:
+                        id_map_resolution = [existing_map_image.width, existing_map_image.height]
+                    pack_offset = None
+                    pack_length = None
+                    if runtime_pack_stream is not None:
+                        existing_rgb_bytes = existing_map_image.convert("RGB").tobytes()
+                        pack_offset = runtime_pack_stream.tell()
+                        pack_length = len(existing_rgb_bytes)
+                        runtime_pack_stream.write(existing_rgb_bytes)
+                        if runtime_pack_frame_byte_length is None:
+                            runtime_pack_frame_byte_length = pack_length
+
+                existing_keyframe_document = json.loads(output_keyframe_path.read_text(encoding="utf-8"))
+                manifest_entries.append(
+                    {
+                        "frameIndex": frame_index,
+                        "frameFile": frame_file,
+                        "mapFile": output_map_path.name,
+                        "keyframeFile": output_keyframe_path.name,
+                        "aoiCount": int(len(existing_keyframe_document.get("aois", []))),
+                        "packOffset": pack_offset,
+                        "packLength": pack_length,
+                        "skipped": True,
+                    }
+                )
+                _emit_progress(
+                    progress_callback,
+                    processed_index,
+                    total_frames,
+                    f"Skipped existing AOI outputs for {frame_file}.",
+                )
+                continue
+
+            import pandas as pd
+
+            frame_detections = pd.DataFrame(frame["detections"])
+            summary = render_aoi_map_from_detections(
+                detections=frame_detections,
+                frames_dir=frames_dir,
+                output_map_path=output_map_path,
+                output_metadata_path=None,
+                video_name=video_name,
+                fps=fps,
+                box_padding=box_padding,
+                write_metadata_document=False,
+                output_width=output_width,
+                output_height=output_height,
+                yaw_offset_degrees=yaw_offset_degrees,
+            )
+
+            if id_map_resolution is None:
+                id_map_resolution = [int(summary["image_width"]), int(summary["image_height"])]
+
+            pack_offset = None
+            pack_length = None
+            if runtime_pack_stream is not None:
+                with Image.open(output_map_path) as written_map_image:
+                    rgb_bytes = written_map_image.convert("RGB").tobytes()
+                pack_offset = runtime_pack_stream.tell()
+                pack_length = len(rgb_bytes)
+                runtime_pack_stream.write(rgb_bytes)
+                if runtime_pack_frame_byte_length is None:
+                    runtime_pack_frame_byte_length = pack_length
+
+            output_keyframe_path.write_text(
+                json.dumps(
+                    {
+                        "video": video_name,
+                        "frameIndex": int(summary["frame_index"]),
+                        "frameFile": summary["frame_file"],
+                        "mapFile": output_map_path.name,
+                        "aois": [
+                            {
+                                "id": int(aoi["id"]),
+                                "bbox": aoi["bbox"],
+                                "confidence": float(aoi["confidence"]),
+                                "sourceDetectionIndex": int(aoi["sourceDetectionIndex"]),
+                            }
+                            for aoi in summary["aois"]
+                        ],
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
             manifest_entries.append(
                 {
-                    "frameIndex": frame_index,
-                    "frameFile": frame_file,
+                    "frameIndex": int(summary["frame_index"]),
+                    "frameFile": summary["frame_file"],
                     "mapFile": output_map_path.name,
                     "keyframeFile": output_keyframe_path.name,
-                    "aoiCount": None,
-                    "skipped": True,
+                    "aoiCount": int(summary["aoi_count"]),
+                    "packOffset": pack_offset,
+                    "packLength": pack_length,
+                    "skipped": False,
                 }
             )
+            written_count += 1
             _emit_progress(
                 progress_callback,
                 processed_index,
                 total_frames,
-                f"Skipped existing AOI outputs for {frame_file}.",
+                f"Wrote AOI keyframe {frame_file} with {summary['aoi_count']} AOIs.",
             )
-            continue
-
-        import pandas as pd
-
-        frame_detections = pd.DataFrame(frame["detections"])
-        summary = render_aoi_map_from_detections(
-            detections=frame_detections,
-            frames_dir=frames_dir,
-            output_map_path=output_map_path,
-            output_metadata_path=None,
-            video_name=video_name,
-            fps=fps,
-            box_padding=box_padding,
-            write_metadata_document=False,
-            output_width=output_width,
-            output_height=output_height,
-            yaw_offset_degrees=yaw_offset_degrees,
-        )
-
-        if id_map_resolution is None:
-            id_map_resolution = [int(summary["image_width"]), int(summary["image_height"])]
-
-        output_keyframe_path.write_text(
-            json.dumps(
-                {
-                    "video": video_name,
-                    "frameIndex": int(summary["frame_index"]),
-                    "frameFile": summary["frame_file"],
-                    "mapFile": output_map_path.name,
-                    "aois": [
-                        {
-                            "id": int(aoi["id"]),
-                            "bbox": aoi["bbox"],
-                            "confidence": float(aoi["confidence"]),
-                            "sourceDetectionIndex": int(aoi["sourceDetectionIndex"]),
-                        }
-                        for aoi in summary["aois"]
-                    ],
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-
-        manifest_entries.append(
-            {
-                "frameIndex": int(summary["frame_index"]),
-                "frameFile": summary["frame_file"],
-                "mapFile": output_map_path.name,
-                "keyframeFile": output_keyframe_path.name,
-                "aoiCount": int(summary["aoi_count"]),
-                "skipped": False,
-            }
-        )
-        written_count += 1
-        _emit_progress(
-            progress_callback,
-            processed_index,
-            total_frames,
-            f"Wrote AOI keyframe {frame_file} with {summary['aoi_count']} AOIs.",
-        )
+    finally:
+        if runtime_pack_stream is not None:
+            runtime_pack_stream.close()
 
     manifest = {
         "video": video_name,
@@ -400,6 +460,16 @@ def build_aoi_sequence(
         "bakedYawOffsetDegrees": float(yaw_offset_degrees),
         "frames": manifest_entries,
     }
+
+    if resolved_runtime_pack_path is not None and id_map_resolution:
+        manifest["runtimePack"] = {
+            "file": resolved_runtime_pack_path.name,
+            "encoding": "rgb24",
+            "frameWidth": int(id_map_resolution[0]),
+            "frameHeight": int(id_map_resolution[1]),
+            "bytesPerPixel": 3,
+            "frameByteLength": int(runtime_pack_frame_byte_length or (id_map_resolution[0] * id_map_resolution[1] * 3)),
+        }
 
     if manifest_path is not None:
         manifest_path = Path(manifest_path)
@@ -494,6 +564,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Bake a horizontal equirectangular yaw offset into every exported AOI map.",
     )
+    parser.add_argument(
+        "--runtime-pack-path",
+        default=None,
+        help="Optional binary runtime-pack output path. Defaults next to the manifest.",
+    )
+    parser.add_argument(
+        "--disable-runtime-pack",
+        action="store_true",
+        help="Disable the binary RGB24 runtime pack export and keep only PNG keyframes.",
+    )
     return parser
 
 
@@ -520,6 +600,8 @@ def main() -> None:
         output_width=args.output_width,
         output_height=args.output_height,
         yaw_offset_degrees=args.yaw_offset_degrees,
+        runtime_pack_path=args.runtime_pack_path,
+        write_runtime_pack=not args.disable_runtime_pack,
     )
 
     print(f"Frames in manifest: {manifest['frameCount']}")
