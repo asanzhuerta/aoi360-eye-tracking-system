@@ -67,6 +67,8 @@ namespace AOI360.Runtime.AOI
         [Header("Confidence")]
         [SerializeField] private float neighborhoodRadiusDegrees = 1.5f;
         [SerializeField] private int neighborhoodSamples = 8;
+        [SerializeField] private bool throttleConfidenceUpdates = true;
+        [SerializeField] private float confidenceUpdateIntervalSeconds = 0.05f;
 
         [Header("Debug")]
         [SerializeField] private bool logAOIChanges = true;
@@ -100,6 +102,8 @@ namespace AOI360.Runtime.AOI
         private readonly HashSet<int> neighborAOISet = new();
         private readonly Dictionary<uint, AoiDefinition> colorToDefinition = new();
         private readonly Dictionary<int, AoiDefinition> idToDefinition = new();
+        private int lastConfidenceAoiId = int.MinValue;
+        private float nextConfidenceUpdateTime;
 
         private void Awake()
         {
@@ -145,7 +149,7 @@ namespace AOI360.Runtime.AOI
 
             int aoiId = ResolveAOIIdFromColor(pixel);
             CurrentAOIId = aoiId;
-            CurrentAOIConfidence = ComputeNeighborhoodConfidence(uv, aoiId);
+            RefreshConfidenceIfNeeded(uv, aoiId);
 
             if (TryGetDefinition(aoiId, out AoiDefinition definition))
             {
@@ -223,6 +227,8 @@ namespace AOI360.Runtime.AOI
             aoiMapTexture = runtimeTexture;
             hasWarnedTextureNotReadable = false;
             lastLoggedAOIId = -1;
+            lastConfidenceAoiId = int.MinValue;
+            nextConfidenceUpdateTime = 0f;
             InvalidatePixelCache();
             ValidateTextureSettings();
         }
@@ -237,6 +243,8 @@ namespace AOI360.Runtime.AOI
             idToDefinition.Clear();
             LoadedMetadataSource = "";
             lastLoggedAOIId = -1;
+            lastConfidenceAoiId = int.MinValue;
+            nextConfidenceUpdateTime = 0f;
         }
 
         public void SetRuntimeAoiData(Texture2D runtimeTexture, string metadataJsonText, string metadataSource = "")
@@ -374,6 +382,33 @@ namespace AOI360.Runtime.AOI
             }
 
             return matches / (float)total;
+        }
+
+        private void RefreshConfidenceIfNeeded(Vector2 uv, int aoiId)
+        {
+            if (aoiId <= 0)
+            {
+                CurrentAOIConfidence = 0f;
+                lastConfidenceAoiId = aoiId;
+                nextConfidenceUpdateTime = Time.unscaledTime + Mathf.Max(0.01f, confidenceUpdateIntervalSeconds);
+                neighborAOIIds.Clear();
+                neighborAOISet.Clear();
+                return;
+            }
+
+            bool shouldRefresh =
+                !throttleConfidenceUpdates ||
+                aoiId != lastConfidenceAoiId ||
+                Time.unscaledTime >= nextConfidenceUpdateTime;
+
+            if (!shouldRefresh)
+            {
+                return;
+            }
+
+            CurrentAOIConfidence = ComputeNeighborhoodConfidence(uv, aoiId);
+            lastConfidenceAoiId = aoiId;
+            nextConfidenceUpdateTime = Time.unscaledTime + Mathf.Max(0.01f, confidenceUpdateIntervalSeconds);
         }
 
         private void EnsureMetadataLoaded()
@@ -583,6 +618,7 @@ namespace AOI360.Runtime.AOI
             grayscaleTolerance = Mathf.Clamp(grayscaleTolerance, 0.0001f, 0.05f);
             neighborhoodSamples = Mathf.Max(0, neighborhoodSamples);
             neighborhoodRadiusDegrees = Mathf.Max(0.1f, neighborhoodRadiusDegrees);
+            confidenceUpdateIntervalSeconds = Mathf.Max(0.01f, confidenceUpdateIntervalSeconds);
         }
 
         private string BuildMetadataResourcePath()

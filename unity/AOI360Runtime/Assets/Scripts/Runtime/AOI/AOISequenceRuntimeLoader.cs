@@ -66,25 +66,6 @@ namespace AOI360.Runtime.AOI
             public bool skipped;
         }
 
-        [Serializable]
-        private class KeyframeDocument
-        {
-            public string video;
-            public int frameIndex;
-            public string frameFile;
-            public string mapFile;
-            public KeyframeAoiEntry[] aois;
-        }
-
-        [Serializable]
-        private class KeyframeAoiEntry
-        {
-            public int id;
-            public int[] bbox;
-            public float confidence;
-            public int sourceDetectionIndex;
-        }
-
         [Header("References")]
         [SerializeField] private VideoPlayback videoPlayback;
         [SerializeField] private AOILookup aoiLookup;
@@ -119,7 +100,6 @@ namespace AOI360.Runtime.AOI
         private string manifestPath = "";
         private string resolvedSequenceBasePath = "";
         private string resolvedMapsPath = "";
-        private string resolvedKeyframesPath = "";
         private string resolvedSequenceFolder = "";
         private string resolvedManifestFileName = "";
         private string resolvedRuntimePackPath = "";
@@ -129,9 +109,7 @@ namespace AOI360.Runtime.AOI
         private byte[] runtimeFrameBuffer = Array.Empty<byte>();
         private byte[] preloadedPackBytes;
         private FrameEntryDocument currentFrameEntry;
-        private KeyframeDocument currentKeyframe;
         private FrameEntryDocument preloadedFrameEntry;
-        private KeyframeDocument preloadedKeyframe;
         private long lastObservedVideoFrame = -1;
         private Coroutine preloadCoroutine;
         private FileStream runtimePackStream;
@@ -299,7 +277,6 @@ namespace AOI360.Runtime.AOI
             }
 
             resolvedMapsPath = ResolveSequenceSubdirectory(manifestDocument.mapsDirectory, "maps");
-            resolvedKeyframesPath = ResolveSequenceSubdirectory(manifestDocument.keyframesDirectory, "keyframes", "metadata");
             InitializeRuntimePack();
             metadataInjectedIntoLookup = false;
             TryInjectMetadataIntoLookup();
@@ -419,7 +396,7 @@ namespace AOI360.Runtime.AOI
                 return;
             }
 
-            if (!TryGetLoadedFrameData(entry, out Texture2D loadedTexture, out KeyframeDocument loadedKeyframe))
+            if (!TryGetLoadedFrameData(entry, out Texture2D loadedTexture))
             {
                 return;
             }
@@ -430,7 +407,6 @@ namespace AOI360.Runtime.AOI
             }
 
             runtimeAoiTexture = loadedTexture;
-            currentKeyframe = loadedKeyframe;
             TryInjectMetadataIntoLookup();
             aoiLookup.SetRuntimeAoiTexture(runtimeAoiTexture, forceRefresh: true);
 
@@ -438,9 +414,7 @@ namespace AOI360.Runtime.AOI
             CurrentKeyframeFrameIndex = entry.frameIndex;
             CurrentMapFile = entry.mapFile ?? "";
             CurrentKeyframeFile = entry.keyframeFile ?? "";
-            CurrentKeyframeAoiCount = currentKeyframe != null && currentKeyframe.aois != null
-                ? currentKeyframe.aois.Length
-                : 0;
+            CurrentKeyframeAoiCount = Mathf.Max(0, entry.aoiCount);
 
             if (Application.isEditor && logSequenceEvents)
             {
@@ -453,28 +427,9 @@ namespace AOI360.Runtime.AOI
             SchedulePreloadForNextEntry(entry);
         }
 
-        private KeyframeDocument LoadKeyframeDocument(string keyframePath)
-        {
-            if (string.IsNullOrWhiteSpace(keyframePath) || !File.Exists(keyframePath))
-            {
-                return null;
-            }
-
-            try
-            {
-                return JsonUtility.FromJson<KeyframeDocument>(File.ReadAllText(keyframePath));
-            }
-            catch (Exception exception)
-            {
-                Debug.LogWarning($"[AOISequenceRuntimeLoader] Could not parse keyframe JSON '{keyframePath}': {exception.Message}");
-                return null;
-            }
-        }
-
         private void HandleVideoLoopOrSeek(long currentVideoFrame)
         {
             currentFrameEntry = null;
-            currentKeyframe = null;
             CurrentKeyframeFrameIndex = -1;
             CurrentMapFile = "";
             CurrentKeyframeFile = "";
@@ -490,46 +445,33 @@ namespace AOI360.Runtime.AOI
             }
         }
 
-        private bool TryGetLoadedFrameData(
-            FrameEntryDocument entry,
-            out Texture2D loadedTexture,
-            out KeyframeDocument loadedKeyframe
-        )
+        private bool TryGetLoadedFrameData(FrameEntryDocument entry, out Texture2D loadedTexture)
         {
             if (HasRuntimePack() &&
                 preloadedFrameEntry != null &&
                 preloadedFrameEntry.frameIndex == entry.frameIndex &&
                 preloadedPackBytes != null)
             {
-                loadedKeyframe = preloadedKeyframe;
                 loadedTexture = ApplyRawFrameDataToRuntimeTexture(entry, preloadedPackBytes);
                 preloadedPackBytes = null;
                 preloadedFrameEntry = null;
-                preloadedKeyframe = null;
                 return loadedTexture != null;
             }
 
             if (preloadedFrameEntry != null && preloadedFrameEntry.frameIndex == entry.frameIndex && preloadedAoiTexture != null)
             {
                 loadedTexture = preloadedAoiTexture;
-                loadedKeyframe = preloadedKeyframe;
                 preloadedAoiTexture = null;
                 preloadedFrameEntry = null;
-                preloadedKeyframe = null;
                 return true;
             }
 
-            return TryLoadFrameDataImmediate(entry, out loadedTexture, out loadedKeyframe);
+            return TryLoadFrameDataImmediate(entry, out loadedTexture);
         }
 
-        private bool TryLoadFrameDataImmediate(
-            FrameEntryDocument entry,
-            out Texture2D loadedTexture,
-            out KeyframeDocument loadedKeyframe
-        )
+        private bool TryLoadFrameDataImmediate(FrameEntryDocument entry, out Texture2D loadedTexture)
         {
             loadedTexture = null;
-            loadedKeyframe = null;
 
             if (HasRuntimePack() && entry.packLength > 0)
             {
@@ -538,8 +480,6 @@ namespace AOI360.Runtime.AOI
                     return false;
                 }
 
-                string keyframePath = ResolveFrameAssetPath(resolvedKeyframesPath, entry.keyframeFile);
-                loadedKeyframe = LoadKeyframeDocument(keyframePath);
                 loadedTexture = ApplyRawFrameDataToRuntimeTexture(entry, rawBytes);
                 return loadedTexture != null;
             }
@@ -563,8 +503,6 @@ namespace AOI360.Runtime.AOI
                 return false;
             }
 
-            string keyframePath = ResolveFrameAssetPath(resolvedKeyframesPath, entry.keyframeFile);
-            loadedKeyframe = LoadKeyframeDocument(keyframePath);
             loadedTexture = texture;
             return true;
         }
@@ -688,19 +626,16 @@ namespace AOI360.Runtime.AOI
             ClearPreloadedFrameData();
             if (HasRuntimePack() && entry.packLength > 0)
             {
-                string keyframePath = ResolveFrameAssetPath(resolvedKeyframesPath, entry.keyframeFile);
-                preloadedKeyframe = LoadKeyframeDocument(keyframePath);
                 if (TryReadRawFrameBytes(entry, cloneBuffer: true, out byte[] rawBytes))
                 {
                     preloadedFrameEntry = entry;
                     preloadedPackBytes = rawBytes;
                 }
             }
-            else if (TryLoadFrameDataImmediate(entry, out Texture2D loadedTexture, out KeyframeDocument loadedKeyframe))
+            else if (TryLoadFrameDataImmediate(entry, out Texture2D loadedTexture))
             {
                 preloadedFrameEntry = entry;
                 preloadedAoiTexture = loadedTexture;
-                preloadedKeyframe = loadedKeyframe;
             }
 
             preloadCoroutine = null;
@@ -738,7 +673,6 @@ namespace AOI360.Runtime.AOI
 
             preloadedPackBytes = null;
             preloadedFrameEntry = null;
-            preloadedKeyframe = null;
         }
 
         private bool TryResolveManifestPath(out string resolvedPath, out string resolvedBasePath)

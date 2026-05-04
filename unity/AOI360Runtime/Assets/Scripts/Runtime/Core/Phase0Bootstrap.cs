@@ -84,9 +84,15 @@ namespace AOI360.Runtime.Core
                 return;
             }
 
-            if (currentSourceTexture != lastOverlaySourceTexture || aoiLookup.CurrentAOIId != lastHighlightedAoiId)
+            if (currentSourceTexture != lastOverlaySourceTexture)
             {
-                RefreshOverlayMaterial(forceRefresh: currentSourceTexture != lastOverlaySourceTexture);
+                RefreshOverlayMaterial(forceRefresh: true);
+                return;
+            }
+
+            if (aoiLookup.CurrentAOIId != lastHighlightedAoiId || aoiLookup.CurrentAOIColor != lastFocusedAoiColor)
+            {
+                RefreshOverlayMaterial(forceRefresh: false);
             }
         }
 
@@ -189,7 +195,13 @@ namespace AOI360.Runtime.Core
             lastHighlightedAoiId = highlightedAoiId;
             lastOverlaySourceTexture = sourceTexture;
             lastFocusedAoiColor = focusedAoiColor;
-            ConfigureTransparentMaterial(overlayMaterial, sourceTexture, Color.white);
+            if (forceRefresh)
+            {
+                ConfigureTransparentMaterial(overlayMaterial, sourceTexture, Color.white);
+                return;
+            }
+
+            UpdateFocusedOverlayState();
         }
 
         private Mesh CreateInvertedSphereMesh(Mesh sourceMesh)
@@ -277,20 +289,12 @@ namespace AOI360.Runtime.Core
                 material.SetFloat("_FocusedOpacity", focusedOverlayOpacity);
             }
 
-            if (material.HasProperty("_FocusedAoiColor"))
-            {
-                material.SetColor("_FocusedAoiColor", aoiLookup != null && aoiLookup.CurrentAOIId > 0 ? aoiLookup.CurrentAOIColor : Color.clear);
-            }
-
-            if (material.HasProperty("_HasFocusedAoi"))
-            {
-                material.SetFloat("_HasFocusedAoi", aoiLookup != null && aoiLookup.CurrentAOIId > 0 ? 1f : 0f);
-            }
-
             if (material.HasProperty("_FocusedColorTolerance"))
             {
                 material.SetFloat("_FocusedColorTolerance", focusedColorTolerance);
             }
+
+            UpdateFocusedOverlayState();
 
             if (material.HasProperty("_Surface"))
             {
@@ -324,6 +328,27 @@ namespace AOI360.Runtime.Core
 
             material.renderQueue = (int)RenderQueue.Transparent;
             material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        }
+
+        private void UpdateFocusedOverlayState()
+        {
+            if (overlayMaterial == null)
+            {
+                return;
+            }
+
+            if (overlayMaterial.HasProperty("_FocusedAoiColor"))
+            {
+                overlayMaterial.SetColor(
+                    "_FocusedAoiColor",
+                    aoiLookup != null && aoiLookup.CurrentAOIId > 0 ? aoiLookup.CurrentAOIColor : Color.clear
+                );
+            }
+
+            if (overlayMaterial.HasProperty("_HasFocusedAoi"))
+            {
+                overlayMaterial.SetFloat("_HasFocusedAoi", aoiLookup != null && aoiLookup.CurrentAOIId > 0 ? 1f : 0f);
+            }
         }
     }
 }
