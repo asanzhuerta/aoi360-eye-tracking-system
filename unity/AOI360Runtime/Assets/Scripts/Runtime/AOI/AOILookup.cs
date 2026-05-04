@@ -213,9 +213,9 @@ namespace AOI360.Runtime.AOI
             return idToDefinition.TryGetValue(aoiId, out definition);
         }
 
-        public void SetRuntimeAoiTexture(Texture2D runtimeTexture)
+        public void SetRuntimeAoiTexture(Texture2D runtimeTexture, bool forceRefresh = false)
         {
-            if (aoiMapTexture == runtimeTexture)
+            if (aoiMapTexture == runtimeTexture && !forceRefresh)
             {
                 return;
             }
@@ -241,7 +241,7 @@ namespace AOI360.Runtime.AOI
 
         public void SetRuntimeAoiData(Texture2D runtimeTexture, string metadataJsonText, string metadataSource = "")
         {
-            SetRuntimeAoiTexture(runtimeTexture);
+            SetRuntimeAoiTexture(runtimeTexture, forceRefresh: true);
             SetRuntimeMetadataJson(metadataJsonText, metadataSource);
         }
 

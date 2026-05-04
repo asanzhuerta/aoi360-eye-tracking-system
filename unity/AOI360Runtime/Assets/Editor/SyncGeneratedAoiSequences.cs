@@ -67,6 +67,11 @@ public static class SyncGeneratedAoiSequences
                 Path.Combine(destinationSequenceRoot, Path.GetFileName(manifestPath)),
                 overwrite: true
             );
+            CopyMatchingFiles(
+                sourceMetadataRoot,
+                destinationSequenceRoot,
+                $"{sequenceName}_aoi_sequence_rgb24.bin"
+            );
 
             syncedCount++;
             Debug.Log(

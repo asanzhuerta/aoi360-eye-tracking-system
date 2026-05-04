@@ -23,6 +23,7 @@ namespace AOI360.Runtime.AOI
             public string mapsDirectory;
             public string keyframesDirectory;
             public float bakedYawOffsetDegrees;
+            public RuntimePackDocument runtimePack;
             public AoiDefinitionDocument[] aois;
             public FrameEntryDocument[] frames;
         }
@@ -42,6 +43,17 @@ namespace AOI360.Runtime.AOI
         }
 
         [Serializable]
+        private class RuntimePackDocument
+        {
+            public string file;
+            public string encoding;
+            public int frameWidth;
+            public int frameHeight;
+            public int bytesPerPixel;
+            public int frameByteLength;
+        }
+
+        [Serializable]
         private class FrameEntryDocument
         {
             public int frameIndex;
@@ -49,6 +61,8 @@ namespace AOI360.Runtime.AOI
             public string mapFile;
             public string keyframeFile;
             public int aoiCount;
+            public int packOffset;
+            public int packLength;
             public bool skipped;
         }
 
@@ -108,15 +122,19 @@ namespace AOI360.Runtime.AOI
         private string resolvedKeyframesPath = "";
         private string resolvedSequenceFolder = "";
         private string resolvedManifestFileName = "";
+        private string resolvedRuntimePackPath = "";
         private bool metadataInjectedIntoLookup;
         private Texture2D runtimeAoiTexture;
         private Texture2D preloadedAoiTexture;
+        private byte[] runtimeFrameBuffer = Array.Empty<byte>();
+        private byte[] preloadedPackBytes;
         private FrameEntryDocument currentFrameEntry;
         private KeyframeDocument currentKeyframe;
         private FrameEntryDocument preloadedFrameEntry;
         private KeyframeDocument preloadedKeyframe;
         private long lastObservedVideoFrame = -1;
         private Coroutine preloadCoroutine;
+        private FileStream runtimePackStream;
         private readonly Dictionary<int, int> frameIndexToSequenceIndex = new();
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -195,6 +213,8 @@ namespace AOI360.Runtime.AOI
                 Destroy(preloadedAoiTexture);
                 preloadedAoiTexture = null;
             }
+
+            CloseRuntimePackStream();
         }
 
         private void ResolveReferences()
@@ -280,6 +300,7 @@ namespace AOI360.Runtime.AOI
 
             resolvedMapsPath = ResolveSequenceSubdirectory(manifestDocument.mapsDirectory, "maps");
             resolvedKeyframesPath = ResolveSequenceSubdirectory(manifestDocument.keyframesDirectory, "keyframes", "metadata");
+            InitializeRuntimePack();
             metadataInjectedIntoLookup = false;
             TryInjectMetadataIntoLookup();
             ApplyManifestProjectionCalibration();
@@ -288,9 +309,56 @@ namespace AOI360.Runtime.AOI
             {
                 Debug.Log(
                     $"[AOISequenceRuntimeLoader] Loaded manifest with {frameEntries.Count} keyframes " +
-                    $"and {GlobalAoiCount} global AOIs from: {manifestPath}"
+                    $"and {GlobalAoiCount} global AOIs from: {manifestPath}" +
+                    $"{(HasRuntimePack() ? $" | runtime-pack={Path.GetFileName(resolvedRuntimePackPath)}" : string.Empty)}"
                 );
             }
+        }
+
+        private void InitializeRuntimePack()
+        {
+            CloseRuntimePackStream();
+            resolvedRuntimePackPath = "";
+
+            if (manifestDocument == null ||
+                manifestDocument.runtimePack == null ||
+                string.IsNullOrWhiteSpace(manifestDocument.runtimePack.file))
+            {
+                return;
+            }
+
+            resolvedRuntimePackPath = ResolveFrameAssetPath(resolvedSequenceBasePath, manifestDocument.runtimePack.file);
+            if (!File.Exists(resolvedRuntimePackPath))
+            {
+                resolvedRuntimePackPath = "";
+                return;
+            }
+
+            runtimePackStream = new FileStream(
+                resolvedRuntimePackPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read
+            );
+        }
+
+        private void CloseRuntimePackStream()
+        {
+            if (runtimePackStream != null)
+            {
+                runtimePackStream.Dispose();
+                runtimePackStream = null;
+            }
+        }
+
+        private bool HasRuntimePack()
+        {
+            return runtimePackStream != null &&
+                   manifestDocument != null &&
+                   manifestDocument.runtimePack != null &&
+                   manifestDocument.runtimePack.frameWidth > 0 &&
+                   manifestDocument.runtimePack.frameHeight > 0 &&
+                   manifestDocument.runtimePack.frameByteLength > 0;
         }
 
         private void ApplyManifestProjectionCalibration()
@@ -350,12 +418,13 @@ namespace AOI360.Runtime.AOI
             {
                 return;
             }
+
             if (!TryGetLoadedFrameData(entry, out Texture2D loadedTexture, out KeyframeDocument loadedKeyframe))
             {
                 return;
             }
 
-            if (runtimeAoiTexture != null)
+            if (runtimeAoiTexture != null && loadedTexture != runtimeAoiTexture)
             {
                 Destroy(runtimeAoiTexture);
             }
@@ -363,7 +432,7 @@ namespace AOI360.Runtime.AOI
             runtimeAoiTexture = loadedTexture;
             currentKeyframe = loadedKeyframe;
             TryInjectMetadataIntoLookup();
-            aoiLookup.SetRuntimeAoiTexture(runtimeAoiTexture);
+            aoiLookup.SetRuntimeAoiTexture(runtimeAoiTexture, forceRefresh: true);
 
             currentFrameEntry = entry;
             CurrentKeyframeFrameIndex = entry.frameIndex;
@@ -427,6 +496,19 @@ namespace AOI360.Runtime.AOI
             out KeyframeDocument loadedKeyframe
         )
         {
+            if (HasRuntimePack() &&
+                preloadedFrameEntry != null &&
+                preloadedFrameEntry.frameIndex == entry.frameIndex &&
+                preloadedPackBytes != null)
+            {
+                loadedKeyframe = preloadedKeyframe;
+                loadedTexture = ApplyRawFrameDataToRuntimeTexture(entry, preloadedPackBytes);
+                preloadedPackBytes = null;
+                preloadedFrameEntry = null;
+                preloadedKeyframe = null;
+                return loadedTexture != null;
+            }
+
             if (preloadedFrameEntry != null && preloadedFrameEntry.frameIndex == entry.frameIndex && preloadedAoiTexture != null)
             {
                 loadedTexture = preloadedAoiTexture;
@@ -448,6 +530,19 @@ namespace AOI360.Runtime.AOI
         {
             loadedTexture = null;
             loadedKeyframe = null;
+
+            if (HasRuntimePack() && entry.packLength > 0)
+            {
+                if (!TryReadRawFrameBytes(entry, cloneBuffer: false, out byte[] rawBytes))
+                {
+                    return false;
+                }
+
+                string keyframePath = ResolveFrameAssetPath(resolvedKeyframesPath, entry.keyframeFile);
+                loadedKeyframe = LoadKeyframeDocument(keyframePath);
+                loadedTexture = ApplyRawFrameDataToRuntimeTexture(entry, rawBytes);
+                return loadedTexture != null;
+            }
 
             string mapPath = ResolveFrameAssetPath(resolvedMapsPath, entry.mapFile);
             if (!File.Exists(mapPath))
@@ -472,6 +567,85 @@ namespace AOI360.Runtime.AOI
             loadedKeyframe = LoadKeyframeDocument(keyframePath);
             loadedTexture = texture;
             return true;
+        }
+
+        private bool TryReadRawFrameBytes(FrameEntryDocument entry, bool cloneBuffer, out byte[] rawBytes)
+        {
+            rawBytes = null;
+            if (!HasRuntimePack() || entry.packLength <= 0)
+            {
+                return false;
+            }
+
+            if (runtimeFrameBuffer.Length != entry.packLength)
+            {
+                runtimeFrameBuffer = new byte[entry.packLength];
+            }
+
+            runtimePackStream.Seek(entry.packOffset, SeekOrigin.Begin);
+            int totalRead = 0;
+            while (totalRead < entry.packLength)
+            {
+                int bytesRead = runtimePackStream.Read(runtimeFrameBuffer, totalRead, entry.packLength - totalRead);
+                if (bytesRead <= 0)
+                {
+                    Debug.LogWarning(
+                        $"[AOISequenceRuntimeLoader] Runtime pack ended unexpectedly while reading frame {entry.frameIndex}."
+                    );
+                    return false;
+                }
+
+                totalRead += bytesRead;
+            }
+
+            if (cloneBuffer)
+            {
+                rawBytes = new byte[entry.packLength];
+                Buffer.BlockCopy(runtimeFrameBuffer, 0, rawBytes, 0, entry.packLength);
+            }
+            else
+            {
+                rawBytes = runtimeFrameBuffer;
+            }
+
+            return true;
+        }
+
+        private Texture2D ApplyRawFrameDataToRuntimeTexture(FrameEntryDocument entry, byte[] rawBytes)
+        {
+            if (manifestDocument == null || manifestDocument.runtimePack == null || rawBytes == null)
+            {
+                return null;
+            }
+
+            RuntimePackDocument runtimePack = manifestDocument.runtimePack;
+            EnsureReusableRuntimeTexture(runtimePack.frameWidth, runtimePack.frameHeight);
+
+            runtimeAoiTexture.name = !string.IsNullOrWhiteSpace(entry.mapFile)
+                ? Path.GetFileNameWithoutExtension(entry.mapFile)
+                : $"aoi_frame_{entry.frameIndex:000000}";
+            runtimeAoiTexture.LoadRawTextureData(rawBytes);
+            runtimeAoiTexture.Apply(updateMipmaps: false, makeNoLongerReadable: false);
+            return runtimeAoiTexture;
+        }
+
+        private void EnsureReusableRuntimeTexture(int width, int height)
+        {
+            if (runtimeAoiTexture != null &&
+                runtimeAoiTexture.width == width &&
+                runtimeAoiTexture.height == height)
+            {
+                return;
+            }
+
+            if (runtimeAoiTexture != null)
+            {
+                Destroy(runtimeAoiTexture);
+            }
+
+            runtimeAoiTexture = new Texture2D(width, height, TextureFormat.RGB24, false);
+            runtimeAoiTexture.wrapMode = TextureWrapMode.Repeat;
+            runtimeAoiTexture.filterMode = FilterMode.Point;
         }
 
         private void SchedulePreloadForNextEntry(FrameEntryDocument entry)
@@ -512,7 +686,17 @@ namespace AOI360.Runtime.AOI
             }
 
             ClearPreloadedFrameData();
-            if (TryLoadFrameDataImmediate(entry, out Texture2D loadedTexture, out KeyframeDocument loadedKeyframe))
+            if (HasRuntimePack() && entry.packLength > 0)
+            {
+                string keyframePath = ResolveFrameAssetPath(resolvedKeyframesPath, entry.keyframeFile);
+                preloadedKeyframe = LoadKeyframeDocument(keyframePath);
+                if (TryReadRawFrameBytes(entry, cloneBuffer: true, out byte[] rawBytes))
+                {
+                    preloadedFrameEntry = entry;
+                    preloadedPackBytes = rawBytes;
+                }
+            }
+            else if (TryLoadFrameDataImmediate(entry, out Texture2D loadedTexture, out KeyframeDocument loadedKeyframe))
             {
                 preloadedFrameEntry = entry;
                 preloadedAoiTexture = loadedTexture;
@@ -552,6 +736,7 @@ namespace AOI360.Runtime.AOI
                 preloadedAoiTexture = null;
             }
 
+            preloadedPackBytes = null;
             preloadedFrameEntry = null;
             preloadedKeyframe = null;
         }

@@ -65,7 +65,7 @@ Phase 0 currently includes:
 - CSV export of fixation events, AOI hits, and pupil diameters when HTC eye tracker data is available
 - runtime debug UI showing AOI state, tracking source, and pupil data
 - per-frame AOI sequence loading from `StreamingAssets`, reset-safe loop handling, and projection alignment through baked offline yaw offsets
-- runtime performance tuning for standalone VR through lighter AOI maps, preloading, cached AOI pixel lookup, and frame-drop-friendly video playback
+- runtime performance tuning for standalone VR through lighter AOI maps, cached AOI pixel lookup, a binary AOI runtime pack, and frame-drop-friendly video playback
 
 ## AOI map contract
 
