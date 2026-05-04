@@ -1,4 +1,9 @@
 from __future__ import annotations
+"""Desktop GUI for the offline preprocessing pipeline.
+
+Tk widgets must be updated on the main thread, so the pipeline runs in a worker
+thread and reports progress back through a queue.
+"""
 
 import queue
 import threading
@@ -16,6 +21,8 @@ from aoi360_pipeline.rebuild_runtime_assets import (
 
 
 class PreprocessGuiApp:
+    """Thin presentation layer over the rebuild pipeline."""
+
     STAGE_ORDER = ("extract", "detect", "build")
     STAGE_WEIGHTS = {
         "extract": 0.2,
@@ -202,6 +209,8 @@ class PreprocessGuiApp:
             messagebox.showinfo("Open folder", f"Could not open the folder automatically.\n\n{exc}")
 
     def _refresh_output_paths(self) -> None:
+        # Resolve paths from the selected video every time so the UI always shows
+        # the real layout Unity will later consume.
         video_path = self.video_path_var.get().strip()
         if not video_path:
             return
@@ -232,6 +241,8 @@ class PreprocessGuiApp:
         self.worker_thread.start()
 
     def _run_pipeline_worker(self) -> None:
+        # Keep the heavy work outside the UI thread to avoid freezing the window
+        # during model loading, frame extraction, or AOI export.
         try:
             include_labels = [
                 value.strip()
@@ -265,6 +276,8 @@ class PreprocessGuiApp:
         self.event_queue.put(("log", message))
 
     def _process_worker_events(self) -> None:
+        # Tkinter is single-threaded. The worker only pushes plain events and
+        # the main loop is the only place that touches widgets.
         while True:
             try:
                 event_type, payload = self.event_queue.get_nowait()

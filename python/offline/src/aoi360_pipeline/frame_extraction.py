@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""Extract sparse frames from a source video for downstream AOI authoring."""
 
 import argparse
 from collections.abc import Callable
@@ -43,6 +44,8 @@ def extract_frames(
     progress_callback: ProgressCallback | None = None,
     log_callback: LogCallback | None = None,
 ) -> dict[str, int | str]:
+    # Sparse extraction keeps the offline dataset manageable while preserving a
+    # predictable mapping back to the original absolute video frame indices.
     if cv2 is None:
         raise RuntimeError(
             "OpenCV is required for frame extraction. Install the offline pipeline dependencies first."

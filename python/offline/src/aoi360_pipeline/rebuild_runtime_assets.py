@@ -1,4 +1,9 @@
 from __future__ import annotations
+"""Orchestrate the full offline AOI rebuild pipeline from one entry point.
+
+This module is intentionally thin: it coordinates the extraction, detection,
+and AOI export stages while keeping each stage in its own focused module.
+"""
 
 import argparse
 import shutil
@@ -16,6 +21,8 @@ LogCallback = Callable[[str], None]
 
 @dataclass(frozen=True)
 class RuntimeBuildPaths:
+    """Stable output layout shared by the CLI, GUI, and Unity sync tools."""
+
     frames_dir: Path
     detections_csv: Path
     output_maps_dir: Path
@@ -25,6 +32,8 @@ class RuntimeBuildPaths:
 
 
 def find_repo_root(start: str | Path | None = None) -> Path:
+    """Walk up from the current path until the project root shape is found."""
+
     current = Path(start or Path.cwd()).resolve()
     for candidate in [current, *current.parents]:
         if (candidate / "python").exists() and (candidate / "unity").exists():
@@ -41,6 +50,8 @@ def derive_runtime_build_paths(
     output_metadata_dir: str | Path | None = None,
     manifest_path: str | Path | None = None,
 ) -> RuntimeBuildPaths:
+    # Keep derived paths in one place so every entry point writes the exact same
+    # folder structure and Unity can rely on a predictable handoff contract.
     video_path = Path(video_path)
     root = find_repo_root(repo_root)
     video_stem = video_path.stem
@@ -99,6 +110,8 @@ def _emit_progress(
 
 
 def clean_paths(paths: list[Path]) -> None:
+    """Delete generated artifacts without touching source assets."""
+
     for path in paths:
         if path.is_dir():
             shutil.rmtree(path, ignore_errors=True)
@@ -128,6 +141,9 @@ def rebuild_runtime_assets(
     progress_callback: ProgressCallback | None = None,
     log_callback: LogCallback | None = None,
 ) -> dict[str, object]:
+    # This function is the application service for the offline pipeline. It
+    # delegates the heavy lifting to the stage-specific modules and keeps the
+    # outer workflow easy to trigger from scripts, the GUI, or future tooling.
     video_path = Path(video_path)
     resolved_paths = derive_runtime_build_paths(
         video_path=video_path,

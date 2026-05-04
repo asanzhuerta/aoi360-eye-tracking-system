@@ -1,4 +1,9 @@
 from __future__ import annotations
+"""Build a persistent AOI sequence that Unity can stream at runtime.
+
+The important contract here is identity stability: if the same detected object
+survives across keyframes, it keeps the same AOI id and exact color.
+"""
 
 import argparse
 import math
@@ -22,6 +27,8 @@ LogCallback = Callable[[str], None]
 
 @dataclass
 class TrackState:
+    """Mutable state for a lightweight per-object track across sparse keyframes."""
+
     track_id: int
     label: str
     prompt: str
@@ -34,6 +41,8 @@ class TrackState:
 
 
 def build_default_runtime_pack_path(manifest_path: str | Path | None, video_name: str) -> Path:
+    """Keep the raw runtime pack next to the manifest by default."""
+
     if manifest_path is not None:
         manifest_path = Path(manifest_path)
         return manifest_path.with_name(
@@ -61,6 +70,8 @@ def _emit_progress(
 
 
 def infer_reference_frame_size(frame_groups, frames_dir: str | Path) -> tuple[int, int]:
+    """Use the first available frame as the source-of-truth export size."""
+
     if not frame_groups:
         return 3840, 1920
 
@@ -116,6 +127,9 @@ def associate_tracks(
     reference_width: int,
     reference_height: int,
 ) -> tuple[list[dict[str, object]], dict[int, dict[str, object]]]:
+    # The tracker is deliberately simple: we only need stable AOI identities for
+    # sparse keyframes, not high-frequency MOT performance. IoU + center
+    # distance gives a robust-enough identity handoff for the current pipeline.
     active_tracks: dict[int, TrackState] = {}
     definitions_by_id: dict[int, dict[str, object]] = {}
     sequence_frames: list[dict[str, object]] = []
@@ -249,6 +263,8 @@ def build_aoi_sequence(
     progress_callback: ProgressCallback | None = None,
     log_callback: LogCallback | None = None,
 ) -> dict[str, object]:
+    """Export PNG keyframes, lightweight metadata, and an optional raw runtime pack."""
+
     detections = load_and_filter_detections(
         detections_csv=detections_csv,
         include_labels=include_labels,
@@ -316,6 +332,8 @@ def build_aoi_sequence(
     _emit_progress(progress_callback, 0, total_frames, "Preparing AOI keyframes.")
 
     if write_runtime_pack:
+        # The binary pack is the preferred Unity runtime path because it removes
+        # per-keyframe PNG decoding from the playback loop.
         resolved_runtime_pack_path = build_default_runtime_pack_path(
             manifest_path=manifest_path,
             video_name=video_name,
@@ -342,6 +360,8 @@ def build_aoi_sequence(
                     pack_offset = None
                     pack_length = None
                     if runtime_pack_stream is not None:
+                        # Even when reusing prior PNGs, keep the runtime pack in
+                        # sync so Unity can stay on the fast path.
                         existing_rgb_bytes = existing_map_image.convert("RGB").tobytes()
                         pack_offset = runtime_pack_stream.tell()
                         pack_length = len(existing_rgb_bytes)
@@ -393,6 +413,8 @@ def build_aoi_sequence(
             pack_offset = None
             pack_length = None
             if runtime_pack_stream is not None:
+                # Write the packed RGB bytes in frame order so Unity can seek by
+                # offset without parsing image files at runtime.
                 with Image.open(output_map_path) as written_map_image:
                     rgb_bytes = written_map_image.convert("RGB").tobytes()
                 pack_offset = runtime_pack_stream.tell()

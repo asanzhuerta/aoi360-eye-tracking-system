@@ -1,4 +1,5 @@
 from __future__ import annotations
+"""Run Grounding DINO over extracted frames and normalize the detections output."""
 
 import argparse
 import inspect
@@ -36,6 +37,8 @@ def get_frame_index(frame_path: Path) -> int:
 
 
 def _lazy_import_transformers_stack():
+    # Delay the heavy ML imports until the command actually runs so simple
+    # metadata operations and --help stay cheap and environment-friendly.
     try:
         import torch
         from PIL import Image
@@ -74,6 +77,8 @@ def _post_process_grounding_dino_results(
     text_threshold: float,
     target_sizes,
 ):
+    # Hugging Face has changed this processor signature across versions. The
+    # adapter keeps the rest of the pipeline independent from that drift.
     post_process = processor.post_process_grounded_object_detection
     parameters = inspect.signature(post_process).parameters
 
@@ -112,6 +117,8 @@ def detect_frames(
     progress_callback: ProgressCallback | None = None,
     log_callback: LogCallback | None = None,
 ) -> pd.DataFrame:
+    # This stage only owns model inference and CSV normalization. Later stages
+    # decide which detections become persistent AOIs for Unity.
     torch, Image, tqdm, AutoModelForZeroShotObjectDetection, AutoProcessor = _lazy_import_transformers_stack()
 
     frames_dir = Path(frames_dir)
