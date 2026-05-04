@@ -8,6 +8,9 @@ namespace AOI360.Runtime.AOI
 {
     public class AOILookup : MonoBehaviour
     {
+        // AOILookup answers the runtime question "which AOI is under the current
+        // gaze UV?". It stays agnostic about where the AOI map came from so the
+        // same lookup logic works for static editor assets and streamed sequences.
         private enum AoiEncodingMode
         {
             MetadataExactColor = 0,
@@ -396,6 +399,9 @@ namespace AOI360.Runtime.AOI
                 return;
             }
 
+            // Confidence is informative, but the neighborhood scan is one of the
+            // more expensive parts of the lookup path on standalone hardware.
+            // Refresh it only when the AOI changes or the throttle window expires.
             bool shouldRefresh =
                 !throttleConfidenceUpdates ||
                 aoiId != lastConfidenceAoiId ||
@@ -539,6 +545,8 @@ namespace AOI360.Runtime.AOI
                 return;
             }
 
+            // Snapshot the full AOI map once so the per-frame path stays on
+            // array reads instead of repeated Texture2D.GetPixel calls.
             cachedPixels = aoiMapTexture.GetPixels32();
             cachedTextureWidth = aoiMapTexture.width;
             cachedTextureHeight = aoiMapTexture.height;

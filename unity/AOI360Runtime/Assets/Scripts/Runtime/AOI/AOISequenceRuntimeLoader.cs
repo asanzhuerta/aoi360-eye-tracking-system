@@ -11,6 +11,9 @@ namespace AOI360.Runtime.AOI
     [DefaultExecutionOrder(-180)]
     public class AOISequenceRuntimeLoader : MonoBehaviour
     {
+        // This component is the runtime boundary between the offline Python
+        // exports and the Unity experiment scene. It keeps the runtime path
+        // lean by preferring the packed RGB stream over per-keyframe PNG loads.
         private const string TargetSceneName = "Phase0_360Playback_VR";
         private const string RuntimeLoaderName = "AOISequenceRuntimeLoader_Runtime";
 
@@ -220,6 +223,8 @@ namespace AOI360.Runtime.AOI
                 return;
             }
 
+            // The manifest already contains the stable AOI identity metadata, so
+            // inject it once and let AOILookup resolve exact-color ids locally.
             aoiLookup.SetRuntimeMetadataJson(manifestJsonText, manifestPath);
             metadataInjectedIntoLookup = true;
         }
@@ -515,6 +520,8 @@ namespace AOI360.Runtime.AOI
                 return false;
             }
 
+            // Reuse a single buffer for the active frame path. Preload requests
+            // can opt into a clone when they must survive until the next swap.
             if (runtimeFrameBuffer.Length != entry.packLength)
             {
                 runtimeFrameBuffer = new byte[entry.packLength];
@@ -576,6 +583,8 @@ namespace AOI360.Runtime.AOI
                 return;
             }
 
+            // One reusable texture avoids repeated allocation and destruction on
+            // standalone VR hardware where memory churn is especially painful.
             if (runtimeAoiTexture != null)
             {
                 Destroy(runtimeAoiTexture);
@@ -628,6 +637,8 @@ namespace AOI360.Runtime.AOI
             {
                 if (TryReadRawFrameBytes(entry, cloneBuffer: true, out byte[] rawBytes))
                 {
+                    // Keep the next frame warm so the swap on the render path is
+                    // just a texture upload, not a blocking disk read.
                     preloadedFrameEntry = entry;
                     preloadedPackBytes = rawBytes;
                 }

@@ -9,6 +9,9 @@ namespace AOI360.Runtime.Core
     [DefaultExecutionOrder(-200)]
     public class Phase0Bootstrap : MonoBehaviour
     {
+        // This bootstrap owns the optional AOI overlay layer used for in-headset
+        // validation. It should stay visually helpful without competing with the
+        // main video playback path for CPU time.
         private const string TargetSceneName = "Phase0_360Playback_VR";
         private const string RuntimeBootstrapName = "Phase0Bootstrap_Runtime";
 
@@ -197,6 +200,8 @@ namespace AOI360.Runtime.Core
             lastFocusedAoiColor = focusedAoiColor;
             if (forceRefresh)
             {
+                // Rebind the whole texture only when the AOI map itself changes.
+                // AOI focus changes should stay on the lighter property-update path.
                 ConfigureTransparentMaterial(overlayMaterial, sourceTexture, Color.white);
                 return;
             }
