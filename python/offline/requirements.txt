@@ -1,4 +1,5 @@
 accelerate
+clip @ git+https://github.com/ultralytics/CLIP.git
 numpy
 opencv-python
 pandas
@@ -7,3 +8,4 @@ torch
 torchvision
 tqdm
 transformers
+ultralytics

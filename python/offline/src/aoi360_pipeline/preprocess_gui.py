@@ -13,6 +13,7 @@ from pathlib import Path
 from tkinter import BooleanVar, DoubleVar, IntVar, StringVar, Tk, filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
+from aoi360_pipeline.detectors import DEFAULT_DETECTOR, resolve_default_model_id
 from aoi360_pipeline.rebuild_runtime_assets import (
     derive_runtime_build_paths,
     find_repo_root,
@@ -50,6 +51,8 @@ class PreprocessGuiApp:
         default_video_path = self.repo_root / "data" / "input_videos" / "video_360.mp4"
         self.video_path_var = StringVar(value=str(default_video_path))
         self.text_prompt_var = StringVar(value="person. face. bottle. screen. product.")
+        self.detector_var = StringVar(value=DEFAULT_DETECTOR)
+        self.detection_model_id_var = StringVar(value=resolve_default_model_id(DEFAULT_DETECTOR))
         self.include_labels_var = StringVar(value="")
         self.every_n_frames_var = IntVar(value=10)
         self.frame_step_var = IntVar(value=30)
@@ -85,6 +88,7 @@ class PreprocessGuiApp:
         self._build_ui()
         self._refresh_output_paths()
         self.video_path_var.trace_add("write", lambda *_: self._refresh_output_paths())
+        self.detector_var.trace_add("write", lambda *_: self._handle_detector_changed())
         self.root.after(self.POLL_INTERVAL_MS, self._process_worker_events)
 
     def _build_ui(self) -> None:
@@ -125,27 +129,42 @@ class PreprocessGuiApp:
         ttk.Label(left_column, text="Prompt").grid(row=1, column=0, sticky="w", pady=4)
         ttk.Entry(left_column, textvariable=self.text_prompt_var).grid(row=1, column=1, columnspan=2, sticky="ew", pady=4)
 
-        ttk.Label(left_column, text="Include labels").grid(row=2, column=0, sticky="w", pady=4)
-        ttk.Entry(left_column, textvariable=self.include_labels_var).grid(row=2, column=1, columnspan=2, sticky="ew", pady=4)
+        ttk.Label(left_column, text="Detector").grid(row=2, column=0, sticky="w", pady=4)
+        detector_combobox = ttk.Combobox(
+            left_column,
+            textvariable=self.detector_var,
+            values=("yolo_world", "grounding_dino"),
+            state="readonly",
+            width=20,
+        )
+        detector_combobox.grid(row=2, column=1, sticky="w", pady=4)
 
-        self._add_spinbox(left_column, "Extract every N frames", self.every_n_frames_var, 3, from_=1, to=1000)
-        self._add_spinbox(left_column, "Export AOI keyframe step", self.frame_step_var, 4, from_=1, to=5000)
-        self._add_spinbox(left_column, "Output width", self.output_width_var, 5, from_=64, to=8192, increment=64)
-        self._add_spinbox(left_column, "Output height", self.output_height_var, 6, from_=64, to=4096, increment=64)
-        self._add_spinbox(left_column, "Detection batch size", self.detection_batch_size_var, 7, from_=1, to=64)
-        self._add_spinbox(left_column, "Detection max width", self.detection_max_width_var, 8, from_=0, to=8192, increment=64)
-        self._add_spinbox(left_column, "Detection max height", self.detection_max_height_var, 9, from_=0, to=4096, increment=64)
-        self._add_spinbox(left_column, "Detection preload workers", self.detection_preload_workers_var, 10, from_=0, to=32)
-        self._add_spinbox(left_column, "Yaw offset (deg)", self.yaw_offset_var, 11, from_=-360.0, to=360.0, increment=1.0)
-        self._add_spinbox(left_column, "Min confidence", self.min_confidence_var, 12, from_=0.0, to=1.0, increment=0.05)
-        self._add_spinbox(left_column, "Box threshold", self.box_threshold_var, 13, from_=0.0, to=1.0, increment=0.05)
-        self._add_spinbox(left_column, "Text threshold", self.text_threshold_var, 14, from_=0.0, to=1.0, increment=0.05)
+        ttk.Label(left_column, text="Detector model").grid(row=3, column=0, sticky="w", pady=4)
+        ttk.Entry(left_column, textvariable=self.detection_model_id_var).grid(
+            row=3, column=1, columnspan=2, sticky="ew", pady=4
+        )
+
+        ttk.Label(left_column, text="Include labels").grid(row=4, column=0, sticky="w", pady=4)
+        ttk.Entry(left_column, textvariable=self.include_labels_var).grid(row=4, column=1, columnspan=2, sticky="ew", pady=4)
+
+        self._add_spinbox(left_column, "Extract every N frames", self.every_n_frames_var, 5, from_=1, to=1000)
+        self._add_spinbox(left_column, "Export AOI keyframe step", self.frame_step_var, 6, from_=1, to=5000)
+        self._add_spinbox(left_column, "Output width", self.output_width_var, 7, from_=64, to=8192, increment=64)
+        self._add_spinbox(left_column, "Output height", self.output_height_var, 8, from_=64, to=4096, increment=64)
+        self._add_spinbox(left_column, "Detection batch size", self.detection_batch_size_var, 9, from_=1, to=64)
+        self._add_spinbox(left_column, "Detection max width", self.detection_max_width_var, 10, from_=0, to=8192, increment=64)
+        self._add_spinbox(left_column, "Detection max height", self.detection_max_height_var, 11, from_=0, to=4096, increment=64)
+        self._add_spinbox(left_column, "Detection preload workers", self.detection_preload_workers_var, 12, from_=0, to=32)
+        self._add_spinbox(left_column, "Yaw offset (deg)", self.yaw_offset_var, 13, from_=-360.0, to=360.0, increment=1.0)
+        self._add_spinbox(left_column, "Min confidence", self.min_confidence_var, 14, from_=0.0, to=1.0, increment=0.05)
+        self._add_spinbox(left_column, "Box threshold", self.box_threshold_var, 15, from_=0.0, to=1.0, increment=0.05)
+        self._add_spinbox(left_column, "Text threshold", self.text_threshold_var, 16, from_=0.0, to=1.0, increment=0.05)
 
         ttk.Checkbutton(
             left_column,
             text="Clean previously generated outputs before rebuilding",
             variable=self.clean_var,
-        ).grid(row=15, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        ).grid(row=17, column=0, columnspan=3, sticky="w", pady=(10, 0))
 
         right_column = ttk.LabelFrame(controls, text="Resolved output layout", padding=10)
         right_column.grid(row=0, column=1, sticky="nsew")
@@ -235,13 +254,21 @@ class PreprocessGuiApp:
         if not video_path:
             return
 
-        resolved = derive_runtime_build_paths(video_path=video_path, repo_root=self.repo_root)
+        resolved = derive_runtime_build_paths(
+            video_path=video_path,
+            detector=self.detector_var.get(),
+            repo_root=self.repo_root,
+        )
         self.frames_dir_var.set(str(resolved.frames_dir))
         self.detections_csv_var.set(str(resolved.detections_csv))
         self.maps_dir_var.set(str(resolved.output_maps_dir))
         self.metadata_dir_var.set(str(resolved.output_metadata_dir))
         self.manifest_path_var.set(str(resolved.manifest_path))
         self.runtime_pack_path_var.set(str(resolved.runtime_pack_path))
+
+    def _handle_detector_changed(self) -> None:
+        self.detection_model_id_var.set(resolve_default_model_id(self.detector_var.get()))
+        self._refresh_output_paths()
 
     def _start_preprocessing(self) -> None:
         if self.worker_thread is not None and self.worker_thread.is_alive():
@@ -272,6 +299,8 @@ class PreprocessGuiApp:
             summary = rebuild_runtime_assets(
                 video_path=self.video_path_var.get().strip(),
                 text_prompt=self.text_prompt_var.get().strip(),
+                detector=self.detector_var.get(),
+                detection_model_id=self.detection_model_id_var.get().strip() or None,
                 every_n_frames=int(self.every_n_frames_var.get()),
                 frame_step=int(self.frame_step_var.get()),
                 output_width=int(self.output_width_var.get()),
@@ -323,7 +352,7 @@ class PreprocessGuiApp:
     def _apply_progress(self, stage: str, current: int, total: int, message: str) -> None:
         stage_title = {
             "extract": "Stage 1/3 - Frame extraction",
-            "detect": "Stage 2/3 - Grounding DINO detection",
+            "detect": "Stage 2/3 - Open-vocabulary detection",
             "build": "Stage 3/3 - AOI sequence export",
             "done": "Completed",
         }.get(stage, stage)
@@ -353,6 +382,7 @@ class PreprocessGuiApp:
     def _handle_success(self, summary: dict[str, object]) -> None:
         self._apply_progress("done", 1, 1, "Runtime assets rebuilt successfully.")
         self._append_log("[gui] Offline preprocessing pipeline completed.")
+        self._append_log(f"[gui] Detector: {summary['detector_display_name']} ({summary['detector_model_id']})")
         self._append_log(f"[gui] AOI keyframes written: {summary['written_count']} / {summary['keyframe_count']}")
         self._append_log(f"[gui] Manifest: {summary['manifest_path']}")
         self._set_running_state(False)

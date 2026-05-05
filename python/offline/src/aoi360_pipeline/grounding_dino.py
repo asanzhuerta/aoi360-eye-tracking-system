@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import inspect
-import re
 from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -11,24 +10,11 @@ from pathlib import Path
 
 import pandas as pd
 
+from aoi360_pipeline.detection_contract import DETECTION_COLUMNS, get_frame_index
 from aoi360_pipeline.runtime_environment import inspect_torch_runtime
 
 
 DEFAULT_MODEL_ID = "IDEA-Research/grounding-dino-tiny"
-DETECTION_COLUMNS = [
-    "frame_index",
-    "frame_file",
-    "detection_index",
-    "label",
-    "confidence",
-    "x_min",
-    "y_min",
-    "x_max",
-    "y_max",
-    "source",
-    "model_id",
-    "prompt",
-]
 ProgressCallback = Callable[[int, int, str], None]
 LogCallback = Callable[[str], None]
 
@@ -41,14 +27,6 @@ class PreparedFrame:
     frame_index: int
     image: object
     target_size: tuple[int, int]
-
-
-def get_frame_index(frame_path: Path) -> int:
-    match = re.search(r"frame_(\d+)", frame_path.stem)
-    if not match:
-        raise ValueError(f"Could not extract frame index from: {frame_path.name}")
-    return int(match.group(1))
-
 
 def _lazy_import_transformers_stack():
     # Delay the heavy ML imports until the command actually runs so simple

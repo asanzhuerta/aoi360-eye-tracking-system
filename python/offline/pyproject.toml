@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "accelerate",
+    "clip @ git+https://github.com/ultralytics/CLIP.git",
     "numpy",
     "opencv-python",
     "pandas",
@@ -14,11 +15,13 @@ dependencies = [
     "torchvision",
     "tqdm",
     "transformers",
+    "ultralytics",
 ]
 
 [project.scripts]
 aoi360-extract-frames = "aoi360_pipeline.frame_extraction:main"
 aoi360-detect-grounding-dino = "aoi360_pipeline.grounding_dino:main"
+aoi360-detect-yolo-world = "aoi360_pipeline.yolo_world:main"
 aoi360-build-aoi-map = "aoi360_pipeline.aoi_map_builder:main"
 aoi360-build-aoi-sequence = "aoi360_pipeline.aoi_map_sequence_builder:main"
 aoi360-rebuild-runtime-assets = "aoi360_pipeline.rebuild_runtime_assets:main"

@@ -319,7 +319,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--detections-csv",
         default="data/interim/detections/video_360_grounding_dino_boxes.csv",
-        help="Detections CSV produced by the Grounding DINO step.",
+        help="Detections CSV produced by the open-vocabulary detector step.",
     )
     parser.add_argument(
         "--frames-dir",

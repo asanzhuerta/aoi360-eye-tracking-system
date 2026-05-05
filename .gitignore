@@ -16,6 +16,8 @@ Thumbs.db
 *.pyd
 *.ipynb_checkpoints/
 *.egg-info/
+.cache/
+yolov8*-world*.pt
 
 # Unity
 [Ll]ibrary/

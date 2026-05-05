@@ -12,8 +12,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from aoi360_pipeline.aoi_map_sequence_builder import build_aoi_sequence
+from aoi360_pipeline.detectors import (
+    DEFAULT_DETECTOR,
+    default_detections_csv_name,
+    detect_frames_with_backend,
+    detector_display_name,
+    normalize_detector_name,
+    resolve_default_model_id,
+)
 from aoi360_pipeline.frame_extraction import extract_frames
-from aoi360_pipeline.grounding_dino import detect_frames
 from aoi360_pipeline.runtime_environment import inspect_torch_runtime
 
 ProgressCallback = Callable[[str, int, int, str], None]
@@ -45,6 +52,7 @@ def find_repo_root(start: str | Path | None = None) -> Path:
 def derive_runtime_build_paths(
     video_path: str | Path,
     repo_root: str | Path | None = None,
+    detector: str = DEFAULT_DETECTOR,
     frames_dir: str | Path | None = None,
     detections_csv: str | Path | None = None,
     output_maps_dir: str | Path | None = None,
@@ -56,12 +64,13 @@ def derive_runtime_build_paths(
     video_path = Path(video_path)
     root = find_repo_root(repo_root)
     video_stem = video_path.stem
+    detector_key = normalize_detector_name(detector)
 
     resolved_frames_dir = Path(frames_dir) if frames_dir is not None else root / "data" / "frames" / video_stem
     resolved_detections_csv = (
         Path(detections_csv)
         if detections_csv is not None
-        else root / "data" / "interim" / "detections" / f"{video_stem}_grounding_dino_boxes.csv"
+        else root / "data" / "interim" / "detections" / default_detections_csv_name(video_stem, detector_key)
     )
     resolved_output_maps_dir = (
         Path(output_maps_dir)
@@ -123,6 +132,8 @@ def clean_paths(paths: list[Path]) -> None:
 def rebuild_runtime_assets(
     video_path: str | Path,
     text_prompt: str,
+    detector: str = DEFAULT_DETECTOR,
+    detection_model_id: str | None = None,
     frames_dir: str | Path | None = None,
     detections_csv: str | Path | None = None,
     output_maps_dir: str | Path | None = None,
@@ -153,12 +164,16 @@ def rebuild_runtime_assets(
     video_path = Path(video_path)
     resolved_paths = derive_runtime_build_paths(
         video_path=video_path,
+        detector=detector,
         frames_dir=frames_dir,
         detections_csv=detections_csv,
         output_maps_dir=output_maps_dir,
         output_metadata_dir=output_metadata_dir,
         manifest_path=manifest_path,
     )
+    detector_key = normalize_detector_name(detector)
+    detector_name = detector_display_name(detector_key)
+    resolved_detection_model_id = detection_model_id or resolve_default_model_id(detector_key)
     frames_dir = resolved_paths.frames_dir
     detections_csv = resolved_paths.detections_csv
     output_maps_dir = resolved_paths.output_maps_dir
@@ -184,6 +199,8 @@ def rebuild_runtime_assets(
     _emit_log(log_callback, f"[rebuild_runtime_assets] AOI metadata directory: {output_metadata_dir}")
     _emit_log(log_callback, f"[rebuild_runtime_assets] Manifest path: {manifest_path}")
     _emit_log(log_callback, f"[rebuild_runtime_assets] Runtime pack path: {runtime_pack_path}")
+    _emit_log(log_callback, f"[rebuild_runtime_assets] Detector: {detector_name}")
+    _emit_log(log_callback, f"[rebuild_runtime_assets] Detector model: {resolved_detection_model_id}")
     runtime_summary = inspect_torch_runtime()
     resolved_detection_batch_size = (
         detection_batch_size if detection_batch_size > 0 else runtime_summary.recommended_batch_size
@@ -208,7 +225,7 @@ def rebuild_runtime_assets(
             log_callback,
             (
                 "[rebuild_runtime_assets] Note: export frame step is larger than the extraction stride. "
-                f"With every_n_frames={every_n_frames} and frame_step={frame_step}, Grounding DINO still runs on "
+                f"With every_n_frames={every_n_frames} and frame_step={frame_step}, the detector still runs on "
                 "intermediate sparse frames that will not become AOI keyframes. For maximum speed, use the same "
                 "value for both settings unless you explicitly need denser detections."
             ),
@@ -225,13 +242,15 @@ def rebuild_runtime_assets(
         log_callback=log_callback,
     )
 
-    _emit_progress(progress_callback, "detect", 0, 1, "Starting Grounding DINO detections.")
-    detections = detect_frames(
+    _emit_progress(progress_callback, "detect", 0, 1, f"Starting {detector_name} detections.")
+    detections = detect_frames_with_backend(
+        detector=detector_key,
         frames_dir=frames_dir,
         output_csv=detections_csv,
         text_prompt=text_prompt,
         box_threshold=box_threshold,
         text_threshold=text_threshold,
+        model_id=resolved_detection_model_id,
         batch_size=resolved_detection_batch_size,
         inference_max_width=detection_max_width,
         inference_max_height=detection_max_height,
@@ -270,6 +289,9 @@ def rebuild_runtime_assets(
 
     return {
         "video_path": str(video_path),
+        "detector": detector_key,
+        "detector_display_name": detector_name,
+        "detector_model_id": resolved_detection_model_id,
         "frames_dir": str(frames_dir),
         "detections_csv": str(detections_csv),
         "maps_dir": str(output_maps_dir),
@@ -292,11 +314,22 @@ def build_parser() -> argparse.ArgumentParser:
         description="Rebuild the runtime-ready AOI assets for a 360 video from scratch."
     )
     parser.add_argument("--video-path", default="data/input_videos/video_360.mp4")
+    parser.add_argument(
+        "--detector",
+        default=DEFAULT_DETECTOR,
+        choices=["grounding_dino", "yolo_world"],
+        help="Open-vocabulary detector backend to use for sparse-frame detections.",
+    )
+    parser.add_argument(
+        "--detection-model-id",
+        default=None,
+        help="Optional override for the backend-specific pretrained model identifier.",
+    )
     parser.add_argument("--frames-dir", default=None, help="Optional override. Defaults to data/frames/<video-stem>.")
     parser.add_argument(
         "--detections-csv",
         default=None,
-        help="Optional override. Defaults to data/interim/detections/<video-stem>_grounding_dino_boxes.csv.",
+        help="Optional override. Defaults to data/interim/detections/<video-stem>_<detector>_boxes.csv.",
     )
     parser.add_argument("--output-maps-dir", default=None, help="Optional override. Defaults to data/processed/id_maps/<video-stem>.")
     parser.add_argument(
@@ -334,19 +367,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--detection-batch-size",
         type=int,
         default=0,
-        help="Grounding DINO batch size. Use 0 to pick a device-aware default automatically.",
+        help="Detector batch size. Use 0 to pick a device-aware default automatically.",
     )
     parser.add_argument(
         "--detection-max-width",
         type=int,
         default=1920,
-        help="Maximum width used during Grounding DINO inference before detections are rescaled back to the original frame.",
+        help="Maximum width used during detector inference before detections are rescaled or projected back to the original frame.",
     )
     parser.add_argument(
         "--detection-max-height",
         type=int,
         default=960,
-        help="Maximum height used during Grounding DINO inference before detections are rescaled back to the original frame.",
+        help="Maximum height used during detector inference before detections are rescaled or projected back to the original frame.",
     )
     parser.add_argument(
         "--detection-preload-workers",
@@ -358,7 +391,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--detection-precision",
         default="auto",
         choices=["auto", "fp16", "fp32"],
-        help="Grounding DINO precision. 'auto' uses fp16 on CUDA and fp32 on CPU.",
+        help="Detector precision. 'auto' uses fp16 on CUDA and fp32 on CPU when supported by the backend.",
     )
     parser.add_argument(
         "--yaw-offset-degrees",
@@ -379,6 +412,8 @@ def main() -> None:
     args = parser.parse_args()
     summary = rebuild_runtime_assets(
         video_path=args.video_path,
+        detector=args.detector,
+        detection_model_id=args.detection_model_id,
         frames_dir=args.frames_dir,
         detections_csv=args.detections_csv,
         output_maps_dir=args.output_maps_dir,
@@ -404,6 +439,7 @@ def main() -> None:
     )
 
     print(f"Video: {summary['video_path']}")
+    print(f"Detector: {summary['detector_display_name']} ({summary['detector_model_id']})")
     print(f"Frames read/saved: {summary['frames_read']} / {summary['frames_saved']}")
     print(f"Detections: {summary['detections_count']}")
     print(f"AOI keyframes written: {summary['written_count']} / {summary['keyframe_count']}")
