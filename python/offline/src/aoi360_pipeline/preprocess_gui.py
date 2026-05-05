@@ -42,10 +42,10 @@ class PreprocessGuiApp:
         self.root.title("AOI360 Offline Preprocessing")
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
-        default_width = min(1040, max(920, screen_width - 120))
-        default_height = min(760, max(660, screen_height - 140))
+        default_width = min(1280, max(980, screen_width - 120))
+        default_height = min(900, max(720, screen_height - 140))
         self.root.geometry(f"{default_width}x{default_height}")
-        self.root.minsize(900, 640)
+        self.root.minsize(980, 700)
 
         default_video_path = self.repo_root / "data" / "input_videos" / "video_360.mp4"
         self.video_path_var = StringVar(value=str(default_video_path))
@@ -112,6 +112,7 @@ class PreprocessGuiApp:
         controls.grid(row=1, column=0, sticky="nsew")
         controls.columnconfigure(0, weight=3)
         controls.columnconfigure(1, weight=2)
+        controls.rowconfigure(0, weight=1)
 
         left_column = ttk.Frame(controls)
         left_column.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
@@ -159,7 +160,7 @@ class PreprocessGuiApp:
         actions = ttk.Frame(self.root, padding=(14, 0, 14, 10))
         actions.grid(row=2, column=0, sticky="nsew")
         actions.columnconfigure(0, weight=1)
-        actions.rowconfigure(3, weight=1)
+        actions.rowconfigure(4, weight=1)
 
         button_row = ttk.Frame(actions)
         button_row.grid(row=0, column=0, sticky="ew")
@@ -185,7 +186,7 @@ class PreprocessGuiApp:
         logs_frame.columnconfigure(0, weight=1)
         logs_frame.rowconfigure(0, weight=1)
 
-        self.logs_text = ScrolledText(logs_frame, wrap="word", height=12, font=("Consolas", 9))
+        self.logs_text = ScrolledText(logs_frame, wrap="word", height=16, font=("Consolas", 9))
         self.logs_text.grid(row=0, column=0, sticky="nsew")
         self.logs_text.configure(state="disabled")
 
