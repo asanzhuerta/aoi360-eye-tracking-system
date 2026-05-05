@@ -14,6 +14,7 @@ from pathlib import Path
 from aoi360_pipeline.aoi_map_sequence_builder import build_aoi_sequence
 from aoi360_pipeline.frame_extraction import extract_frames
 from aoi360_pipeline.grounding_dino import detect_frames
+from aoi360_pipeline.runtime_environment import inspect_torch_runtime
 
 ProgressCallback = Callable[[str, int, int, str], None]
 LogCallback = Callable[[str], None]
@@ -132,10 +133,10 @@ def rebuild_runtime_assets(
     frame_step: int = 30,
     output_width: int = 1024,
     output_height: int = 512,
-    detection_batch_size: int = 2,
+    detection_batch_size: int = 0,
     detection_max_width: int | None = 1920,
     detection_max_height: int | None = 960,
-    detection_preload_workers: int = 2,
+    detection_preload_workers: int = 0,
     min_confidence: float = 0.35,
     box_threshold: float = 0.35,
     text_threshold: float = 0.25,
@@ -182,14 +183,22 @@ def rebuild_runtime_assets(
     _emit_log(log_callback, f"[rebuild_runtime_assets] AOI metadata directory: {output_metadata_dir}")
     _emit_log(log_callback, f"[rebuild_runtime_assets] Manifest path: {manifest_path}")
     _emit_log(log_callback, f"[rebuild_runtime_assets] Runtime pack path: {runtime_pack_path}")
+    runtime_summary = inspect_torch_runtime()
+    resolved_detection_batch_size = (
+        detection_batch_size if detection_batch_size > 0 else runtime_summary.recommended_batch_size
+    )
+    resolved_detection_preload_workers = (
+        detection_preload_workers if detection_preload_workers > 0 else runtime_summary.recommended_preload_workers
+    )
+    _emit_log(log_callback, f"[rebuild_runtime_assets] Runtime: {runtime_summary.short_label}")
     _emit_log(
         log_callback,
         (
             "[rebuild_runtime_assets] Detection settings: "
-            f"batch_size={detection_batch_size}, "
+            f"batch_size={resolved_detection_batch_size}, "
             f"max_width={detection_max_width}, "
             f"max_height={detection_max_height}, "
-            f"preload_workers={detection_preload_workers}."
+            f"preload_workers={resolved_detection_preload_workers}."
         ),
     )
 
@@ -211,10 +220,10 @@ def rebuild_runtime_assets(
         text_prompt=text_prompt,
         box_threshold=box_threshold,
         text_threshold=text_threshold,
-        batch_size=detection_batch_size,
+        batch_size=resolved_detection_batch_size,
         inference_max_width=detection_max_width,
         inference_max_height=detection_max_height,
-        preload_workers=detection_preload_workers,
+        preload_workers=resolved_detection_preload_workers,
         progress_callback=lambda current, total, message: _emit_progress(
             progress_callback, "detect", current, total, message
         ),
@@ -311,8 +320,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--detection-batch-size",
         type=int,
-        default=2,
-        help="Grounding DINO batch size. Defaults to 2 to speed up long CPU runs without getting too memory-heavy.",
+        default=0,
+        help="Grounding DINO batch size. Use 0 to pick a device-aware default automatically.",
     )
     parser.add_argument(
         "--detection-max-width",
@@ -329,8 +338,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--detection-preload-workers",
         type=int,
-        default=2,
-        help="Thread count for loading and resizing frame batches ahead of inference.",
+        default=0,
+        help="Thread count for loading and resizing frame batches ahead of inference. Use 0 to pick a device-aware default automatically.",
     )
     parser.add_argument(
         "--yaw-offset-degrees",

@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from aoi360_pipeline.runtime_environment import inspect_torch_runtime
+
 
 DEFAULT_MODEL_ID = "IDEA-Research/grounding-dino-tiny"
 DETECTION_COLUMNS = [
@@ -202,9 +204,13 @@ def detect_frames(
 
     output_csv.parent.mkdir(parents=True, exist_ok=True)
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    effective_batch_size = batch_size if batch_size > 0 else (4 if device == "cuda" else 2)
-    effective_preload_workers = preload_workers if preload_workers > 0 else min(4, effective_batch_size)
+    runtime_summary = inspect_torch_runtime(torch)
+    device = runtime_summary.default_device
+    effective_batch_size = batch_size if batch_size > 0 else runtime_summary.recommended_batch_size
+    effective_preload_workers = (
+        preload_workers if preload_workers > 0 else min(runtime_summary.recommended_preload_workers, effective_batch_size)
+    )
+    _emit_log(log_callback, f"[detect_grounding_dino] Runtime: {runtime_summary.short_label}")
     _emit_log(log_callback, f"[detect_grounding_dino] Using device: {device}")
     _emit_log(log_callback, f"[detect_grounding_dino] Model: {model_id}")
     _emit_log(log_callback, f"[detect_grounding_dino] Batch size: {effective_batch_size}")

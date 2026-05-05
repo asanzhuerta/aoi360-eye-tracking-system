@@ -18,6 +18,7 @@ from aoi360_pipeline.rebuild_runtime_assets import (
     find_repo_root,
     rebuild_runtime_assets,
 )
+from aoi360_pipeline.runtime_environment import inspect_torch_runtime
 
 
 class PreprocessGuiApp:
@@ -35,6 +36,7 @@ class PreprocessGuiApp:
         self.repo_root = find_repo_root(Path(__file__).resolve())
         self.event_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self.worker_thread: threading.Thread | None = None
+        self.runtime_summary = inspect_torch_runtime()
 
         self.root = Tk()
         self.root.title("AOI360 Offline Preprocessing")
@@ -53,10 +55,10 @@ class PreprocessGuiApp:
         self.frame_step_var = IntVar(value=30)
         self.output_width_var = IntVar(value=1024)
         self.output_height_var = IntVar(value=512)
-        self.detection_batch_size_var = IntVar(value=2)
+        self.detection_batch_size_var = IntVar(value=self.runtime_summary.recommended_batch_size)
         self.detection_max_width_var = IntVar(value=1920)
         self.detection_max_height_var = IntVar(value=960)
-        self.detection_preload_workers_var = IntVar(value=2)
+        self.detection_preload_workers_var = IntVar(value=self.runtime_summary.recommended_preload_workers)
         self.yaw_offset_var = DoubleVar(value=0.0)
         self.min_confidence_var = DoubleVar(value=0.35)
         self.box_threshold_var = DoubleVar(value=0.35)
@@ -73,6 +75,7 @@ class PreprocessGuiApp:
         self.current_stage_label_var = StringVar(value="Idle")
         self.current_stage_detail_var = StringVar(value="Select a video and start preprocessing.")
         self.overall_progress_label_var = StringVar(value="Overall progress: 0%")
+        self.runtime_label_var = StringVar(value=f"Runtime: {self.runtime_summary.short_label}")
 
         self.stage_progress_var = DoubleVar(value=0.0)
         self.overall_progress_var = DoubleVar(value=0.0)
@@ -100,6 +103,10 @@ class PreprocessGuiApp:
             header,
             text="Select a 360 video, launch the offline pipeline, and follow the rebuild step by step.",
         ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ttk.Label(
+            header,
+            textvariable=self.runtime_label_var,
+        ).grid(row=2, column=0, sticky="w", pady=(4, 0))
 
         controls = ttk.Frame(self.root, padding=(14, 0, 14, 10))
         controls.grid(row=1, column=0, sticky="nsew")
