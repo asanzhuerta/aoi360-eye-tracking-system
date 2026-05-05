@@ -15,12 +15,14 @@ This is not yet the final automated pipeline with segmentation, temporal propaga
 The pipeline now also includes:
 
 - a master rebuild script that regenerates the runtime assets from scratch
-- a small Tkinter GUI that lets an operator select a video, launch preprocessing, and monitor progress and logs live
+- a compact Tkinter GUI that lets an operator select a video, launch preprocessing, and monitor progress and logs live
+- CUDA-aware runtime inspection so the preprocessing stage can report whether it is running on `cpu` or `cuda`
 - runtime-oriented exports with:
   - sparse AOI keyframes every `30` video frames by default
   - lighter AOI maps at `1024x512`
-  - a baked `270` degree yaw offset so Unity does not need to compensate it every frame
+  - a baked yaw offset default of `0` degrees
   - a binary `RGB24` runtime pack so Unity can avoid decoding PNG keyframes during playback
+- stable AOI identities across sparse keyframes, so one tracked AOI keeps the same color and id over the exported sequence
 
 ## Install
 
@@ -28,6 +30,12 @@ Recommended:
 
 ```bash
 pip install -e python/offline
+```
+
+If you have a compatible NVIDIA GPU and want Grounding DINO to use CUDA, reinstall PyTorch in the project environment with the official CUDA wheels. For the current setup we used the `cu126` index from the official PyTorch install guide:
+
+```bash
+python/offline/.venv/Scripts/python.exe -m pip install --upgrade --force-reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu126
 ```
 
 Alternative:
@@ -64,7 +72,7 @@ python python/offline/scripts/build_aoi_sequence.py --detections-csv data/interi
 
 ### 5. Rebuild the complete runtime asset set from scratch
 
-This command derives the output layout from the selected video name, cleans previous generated assets, exports sparse AOI keyframes every `30` source frames, writes runtime-friendly `1024x512` AOI maps, and bakes the current `270` degree yaw offset into the exported maps.
+This command derives the output layout from the selected video name, cleans previous generated assets, exports sparse AOI keyframes every `30` source frames, writes runtime-friendly `1024x512` AOI maps, and uses device-aware Grounding DINO defaults.
 
 ```bash
 python python/offline/scripts/rebuild_runtime_assets.py --video-path data/input_videos/video_360.mp4 --clean
@@ -79,9 +87,10 @@ python python/offline/scripts/preprocess_gui.py
 The GUI lets you:
 
 - select the input 360 video
-- tweak prompt, confidence, frame stride, output resolution, and yaw offset
+- tweak prompt, confidence, frame stride, output resolution, batch settings, and yaw offset
 - launch the full preprocessing pipeline from one button
 - follow stage progress and useful logs in real time
+- see whether the pipeline is running on `cpu` or `cuda`
 - see the resolved output folders before running anything
 
 ## Outputs

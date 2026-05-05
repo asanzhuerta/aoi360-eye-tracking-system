@@ -64,7 +64,7 @@ Phase 0 currently includes:
 - visible fixation hit marker plus a capped trail of previous fixations
 - CSV export of fixation events, AOI hits, and pupil diameters when HTC eye tracker data is available
 - runtime debug UI showing AOI state, tracking source, and pupil data
-- per-frame AOI sequence loading from `StreamingAssets`, reset-safe loop handling, and projection alignment through baked offline yaw offsets
+- per-frame AOI sequence loading from `StreamingAssets`, reset-safe loop handling, and projection alignment through runtime calibration plus optional baked offline yaw offsets
 - runtime performance tuning for standalone VR through lighter AOI maps, cached AOI pixel lookup, a binary AOI runtime pack, and frame-drop-friendly video playback
 
 ## AOI map contract
@@ -130,6 +130,14 @@ The current offline branch supports a simple AOI authoring loop:
 3. export a Unity-compatible AOI map PNG plus metadata JSON
 4. optionally export a full per-frame AOI sequence plus manifest for Unity runtime loading
 5. rebuild the full runtime-ready asset set in one command or from the preprocessing GUI
+
+The offline pipeline now also supports:
+
+- CUDA-aware Grounding DINO preprocessing when a compatible NVIDIA GPU is available
+- automatic preprocessing defaults tuned to the detected runtime (`cpu` or `cuda`)
+- stable AOI identities across sparse keyframes, so the same tracked AOI keeps the same color and id over time
+- a more compact desktop preprocessing GUI that fits typical laptop screens better
+- a default baked yaw offset of `0` degrees, with any extra alignment handled explicitly instead of hidden in the export defaults
 
 Reference commands and options live in:
 
