@@ -38,8 +38,12 @@ class PreprocessGuiApp:
 
         self.root = Tk()
         self.root.title("AOI360 Offline Preprocessing")
-        self.root.geometry("1180x840")
-        self.root.minsize(1040, 760)
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        default_width = min(1040, max(920, screen_width - 120))
+        default_height = min(760, max(660, screen_height - 140))
+        self.root.geometry(f"{default_width}x{default_height}")
+        self.root.minsize(900, 640)
 
         default_video_path = self.repo_root / "data" / "input_videos" / "video_360.mp4"
         self.video_path_var = StringVar(value=str(default_video_path))
@@ -53,7 +57,7 @@ class PreprocessGuiApp:
         self.detection_max_width_var = IntVar(value=1920)
         self.detection_max_height_var = IntVar(value=960)
         self.detection_preload_workers_var = IntVar(value=2)
-        self.yaw_offset_var = DoubleVar(value=270.0)
+        self.yaw_offset_var = DoubleVar(value=0.0)
         self.min_confidence_var = DoubleVar(value=0.35)
         self.box_threshold_var = DoubleVar(value=0.35)
         self.text_threshold_var = DoubleVar(value=0.25)
@@ -84,26 +88,26 @@ class PreprocessGuiApp:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(2, weight=1)
 
-        header = ttk.Frame(self.root, padding=(18, 16, 18, 10))
+        header = ttk.Frame(self.root, padding=(14, 12, 14, 8))
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(0, weight=1)
         ttk.Label(
             header,
             text="AOI360 Preprocessing Console",
-            font=("Segoe UI", 16, "bold"),
+            font=("Segoe UI", 15, "bold"),
         ).grid(row=0, column=0, sticky="w")
         ttk.Label(
             header,
             text="Select a 360 video, launch the offline pipeline, and follow the rebuild step by step.",
         ).grid(row=1, column=0, sticky="w", pady=(4, 0))
 
-        controls = ttk.Frame(self.root, padding=(18, 0, 18, 12))
+        controls = ttk.Frame(self.root, padding=(14, 0, 14, 10))
         controls.grid(row=1, column=0, sticky="nsew")
         controls.columnconfigure(0, weight=3)
         controls.columnconfigure(1, weight=2)
 
         left_column = ttk.Frame(controls)
-        left_column.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        left_column.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         left_column.columnconfigure(1, weight=1)
 
         ttk.Label(left_column, text="Video").grid(row=0, column=0, sticky="w", pady=(0, 8))
@@ -135,7 +139,7 @@ class PreprocessGuiApp:
             variable=self.clean_var,
         ).grid(row=15, column=0, columnspan=3, sticky="w", pady=(10, 0))
 
-        right_column = ttk.LabelFrame(controls, text="Resolved output layout", padding=12)
+        right_column = ttk.LabelFrame(controls, text="Resolved output layout", padding=10)
         right_column.grid(row=0, column=1, sticky="nsew")
         right_column.columnconfigure(1, weight=1)
         self._add_output_row(right_column, "Frames", self.frames_dir_var, 0)
@@ -145,7 +149,7 @@ class PreprocessGuiApp:
         self._add_output_row(right_column, "Manifest", self.manifest_path_var, 4)
         self._add_output_row(right_column, "Runtime pack", self.runtime_pack_path_var, 5)
 
-        actions = ttk.Frame(self.root, padding=(18, 0, 18, 12))
+        actions = ttk.Frame(self.root, padding=(14, 0, 14, 10))
         actions.grid(row=2, column=0, sticky="nsew")
         actions.columnconfigure(0, weight=1)
         actions.rowconfigure(3, weight=1)
@@ -174,7 +178,7 @@ class PreprocessGuiApp:
         logs_frame.columnconfigure(0, weight=1)
         logs_frame.rowconfigure(0, weight=1)
 
-        self.logs_text = ScrolledText(logs_frame, wrap="word", height=18, font=("Consolas", 10))
+        self.logs_text = ScrolledText(logs_frame, wrap="word", height=12, font=("Consolas", 9))
         self.logs_text.grid(row=0, column=0, sticky="nsew")
         self.logs_text.configure(state="disabled")
 

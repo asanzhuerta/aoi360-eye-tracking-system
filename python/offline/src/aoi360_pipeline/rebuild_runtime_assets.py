@@ -141,7 +141,7 @@ def rebuild_runtime_assets(
     text_threshold: float = 0.25,
     include_labels: list[str] | None = None,
     clean: bool = False,
-    yaw_offset_degrees: float = 270.0,
+    yaw_offset_degrees: float = 0.0,
     progress_callback: ProgressCallback | None = None,
     log_callback: LogCallback | None = None,
 ) -> dict[str, object]:
@@ -335,8 +335,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--yaw-offset-degrees",
         type=float,
-        default=270.0,
-        help="Bake this horizontal equirectangular yaw offset into every exported AOI map. Defaults to 270 degrees for the current Unity 360 setup.",
+        default=0.0,
+        help="Bake this horizontal equirectangular yaw offset into every exported AOI map. Defaults to 0 degrees.",
     )
     parser.add_argument("--min-confidence", type=float, default=0.35)
     parser.add_argument("--box-threshold", type=float, default=0.35)
