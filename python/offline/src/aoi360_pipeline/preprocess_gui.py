@@ -49,6 +49,10 @@ class PreprocessGuiApp:
         self.frame_step_var = IntVar(value=30)
         self.output_width_var = IntVar(value=1024)
         self.output_height_var = IntVar(value=512)
+        self.detection_batch_size_var = IntVar(value=2)
+        self.detection_max_width_var = IntVar(value=1920)
+        self.detection_max_height_var = IntVar(value=960)
+        self.detection_preload_workers_var = IntVar(value=2)
         self.yaw_offset_var = DoubleVar(value=270.0)
         self.min_confidence_var = DoubleVar(value=0.35)
         self.box_threshold_var = DoubleVar(value=0.35)
@@ -116,16 +120,20 @@ class PreprocessGuiApp:
         self._add_spinbox(left_column, "Export AOI keyframe step", self.frame_step_var, 4, from_=1, to=5000)
         self._add_spinbox(left_column, "Output width", self.output_width_var, 5, from_=64, to=8192, increment=64)
         self._add_spinbox(left_column, "Output height", self.output_height_var, 6, from_=64, to=4096, increment=64)
-        self._add_spinbox(left_column, "Yaw offset (deg)", self.yaw_offset_var, 7, from_=-360.0, to=360.0, increment=1.0)
-        self._add_spinbox(left_column, "Min confidence", self.min_confidence_var, 8, from_=0.0, to=1.0, increment=0.05)
-        self._add_spinbox(left_column, "Box threshold", self.box_threshold_var, 9, from_=0.0, to=1.0, increment=0.05)
-        self._add_spinbox(left_column, "Text threshold", self.text_threshold_var, 10, from_=0.0, to=1.0, increment=0.05)
+        self._add_spinbox(left_column, "Detection batch size", self.detection_batch_size_var, 7, from_=1, to=64)
+        self._add_spinbox(left_column, "Detection max width", self.detection_max_width_var, 8, from_=0, to=8192, increment=64)
+        self._add_spinbox(left_column, "Detection max height", self.detection_max_height_var, 9, from_=0, to=4096, increment=64)
+        self._add_spinbox(left_column, "Detection preload workers", self.detection_preload_workers_var, 10, from_=0, to=32)
+        self._add_spinbox(left_column, "Yaw offset (deg)", self.yaw_offset_var, 11, from_=-360.0, to=360.0, increment=1.0)
+        self._add_spinbox(left_column, "Min confidence", self.min_confidence_var, 12, from_=0.0, to=1.0, increment=0.05)
+        self._add_spinbox(left_column, "Box threshold", self.box_threshold_var, 13, from_=0.0, to=1.0, increment=0.05)
+        self._add_spinbox(left_column, "Text threshold", self.text_threshold_var, 14, from_=0.0, to=1.0, increment=0.05)
 
         ttk.Checkbutton(
             left_column,
             text="Clean previously generated outputs before rebuilding",
             variable=self.clean_var,
-        ).grid(row=11, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        ).grid(row=15, column=0, columnspan=3, sticky="w", pady=(10, 0))
 
         right_column = ttk.LabelFrame(controls, text="Resolved output layout", padding=12)
         right_column.grid(row=0, column=1, sticky="nsew")
@@ -256,6 +264,10 @@ class PreprocessGuiApp:
                 frame_step=int(self.frame_step_var.get()),
                 output_width=int(self.output_width_var.get()),
                 output_height=int(self.output_height_var.get()),
+                detection_batch_size=int(self.detection_batch_size_var.get()),
+                detection_max_width=int(self.detection_max_width_var.get()) or None,
+                detection_max_height=int(self.detection_max_height_var.get()) or None,
+                detection_preload_workers=int(self.detection_preload_workers_var.get()),
                 yaw_offset_degrees=float(self.yaw_offset_var.get()),
                 min_confidence=float(self.min_confidence_var.get()),
                 box_threshold=float(self.box_threshold_var.get()),

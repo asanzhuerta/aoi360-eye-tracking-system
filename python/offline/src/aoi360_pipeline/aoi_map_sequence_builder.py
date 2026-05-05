@@ -119,6 +119,33 @@ def bbox_center_distance(box_a: tuple[float, float, float, float], box_b: tuple[
     return math.hypot(center_a_x - center_b_x, center_a_y - center_b_y)
 
 
+def bbox_area(box: tuple[float, float, float, float]) -> float:
+    x_min, y_min, x_max, y_max = box
+    return max(0.0, x_max - x_min) * max(0.0, y_max - y_min)
+
+
+def bbox_area_similarity(box_a: tuple[float, float, float, float], box_b: tuple[float, float, float, float]) -> float:
+    area_a = bbox_area(box_a)
+    area_b = bbox_area(box_b)
+    if area_a <= 0.0 or area_b <= 0.0:
+        return 0.0
+
+    return min(area_a, area_b) / max(area_a, area_b)
+
+
+def infer_keyframe_spacing(frame_groups) -> int:
+    frame_indices = [int(frame_index) for (frame_index, _frame_file), _frame_rows in frame_groups]
+    positive_deltas = [
+        current - previous
+        for previous, current in zip(frame_indices, frame_indices[1:])
+        if current > previous
+    ]
+    if not positive_deltas:
+        return 0
+
+    return min(positive_deltas)
+
+
 def associate_tracks(
     frame_groups,
     max_track_frame_gap: int,
@@ -139,6 +166,11 @@ def associate_tracks(
 
     for (frame_index, frame_file), frame_detections in frame_groups:
         frame_index = int(frame_index)
+        active_tracks = {
+            track_id: track
+            for track_id, track in active_tracks.items()
+            if (frame_index - track.last_frame_index) <= max_track_frame_gap
+        }
         frame_rows = frame_detections.sort_values(["confidence", "detection_index"], ascending=[False, True]).copy()
         assigned_track_ids: set[int] = set()
         frame_entries: list[dict[str, object]] = []
@@ -149,7 +181,7 @@ def associate_tracks(
             bbox = (float(row.x_min), float(row.y_min), float(row.x_max), float(row.y_max))
 
             best_track: TrackState | None = None
-            best_score: tuple[float, float, float] | None = None
+            best_score: tuple[float, float, float, float] | None = None
 
             for track in active_tracks.values():
                 if track.track_id in assigned_track_ids:
@@ -163,11 +195,14 @@ def associate_tracks(
 
                 iou = bbox_iou(track.last_bbox, bbox)
                 center_distance = bbox_center_distance(track.last_bbox, bbox)
+                area_similarity = bbox_area_similarity(track.last_bbox, bbox)
 
                 if iou < min_track_iou and center_distance > max_center_distance_px:
                     continue
+                if area_similarity < 0.2 and center_distance > (max_center_distance_px * 0.5):
+                    continue
 
-                score = (iou, -center_distance, -frame_gap)
+                score = (iou, area_similarity, -center_distance, -frame_gap)
                 if best_score is None or score > best_score:
                     best_track = track
                     best_score = score
@@ -313,9 +348,32 @@ def build_aoi_sequence(
             f"[build_aoi_sequence] Keeping only absolute video frames that match the step {frame_step}.",
         )
 
+    inferred_keyframe_spacing = infer_keyframe_spacing(frame_groups)
+    effective_max_track_frame_gap = max_track_frame_gap
+    if inferred_keyframe_spacing > 0:
+        # The tracker compares absolute video-frame indices, so when we export
+        # sparse keyframes (for example every 30 frames) the effective gap must
+        # be at least that spacing or identities can never survive to the next
+        # exported frame. Doubling the spacing also tolerates one missing
+        # keyframe without fragmenting the AOI id.
+        effective_max_track_frame_gap = max(
+            max_track_frame_gap,
+            inferred_keyframe_spacing * 2,
+        )
+
+    if effective_max_track_frame_gap != max_track_frame_gap:
+        _emit_log(
+            log_callback,
+            (
+                "[build_aoi_sequence] Increased the effective track gap from "
+                f"{max_track_frame_gap} to {effective_max_track_frame_gap} absolute video frames "
+                f"to match the exported keyframe spacing ({inferred_keyframe_spacing})."
+            ),
+        )
+
     sequence_frames, definitions_by_id = associate_tracks(
         frame_groups=frame_groups,
-        max_track_frame_gap=max_track_frame_gap,
+        max_track_frame_gap=effective_max_track_frame_gap,
         min_track_iou=min_track_iou,
         max_track_center_distance_ratio=max_track_center_distance_ratio,
         reference_width=reference_width,
@@ -415,8 +473,7 @@ def build_aoi_sequence(
             if runtime_pack_stream is not None:
                 # Write the packed RGB bytes in frame order so Unity can seek by
                 # offset without parsing image files at runtime.
-                with Image.open(output_map_path) as written_map_image:
-                    rgb_bytes = written_map_image.convert("RGB").tobytes()
+                rgb_bytes = summary["rgb24_bytes"]
                 pack_offset = runtime_pack_stream.tell()
                 pack_length = len(rgb_bytes)
                 runtime_pack_stream.write(rgb_bytes)
@@ -557,7 +614,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--min-confidence", type=float, default=0.35)
     parser.add_argument("--box-padding", type=int, default=0)
-    parser.add_argument("--max-track-frame-gap", type=int, default=20)
+    parser.add_argument(
+        "--max-track-frame-gap",
+        type=int,
+        default=20,
+        help="Maximum absolute video-frame gap allowed when linking two detections into the same AOI track.",
+    )
     parser.add_argument("--min-track-iou", type=float, default=0.05)
     parser.add_argument("--max-track-center-distance-ratio", type=float, default=0.08)
     parser.add_argument("--max-frames", type=int, default=None)

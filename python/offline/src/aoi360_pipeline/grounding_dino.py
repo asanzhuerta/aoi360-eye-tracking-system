@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse
 import inspect
 import re
+from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -27,6 +29,16 @@ DETECTION_COLUMNS = [
 ]
 ProgressCallback = Callable[[int, int, str], None]
 LogCallback = Callable[[str], None]
+
+
+@dataclass(frozen=True)
+class PreparedFrame:
+    """Carry one frame through the batched inference pipeline."""
+
+    frame_path: Path
+    frame_index: int
+    image: object
+    target_size: tuple[int, int]
 
 
 def get_frame_index(frame_path: Path) -> int:
@@ -107,6 +119,54 @@ def _post_process_grounding_dino_results(
     return post_process(**kwargs)
 
 
+def _resolve_resampling_filter(image_module):
+    try:
+        return image_module.Resampling.BICUBIC
+    except AttributeError:  # pragma: no cover - Pillow compatibility shim
+        return image_module.BICUBIC
+
+
+def _resize_for_inference(image, image_module, max_width: int | None, max_height: int | None):
+    width, height = image.size
+    scale = 1.0
+
+    if max_width is not None and max_width > 0 and width > max_width:
+        scale = min(scale, max_width / width)
+    if max_height is not None and max_height > 0 and height > max_height:
+        scale = min(scale, max_height / height)
+
+    if scale >= 1.0:
+        return image
+
+    resized_width = max(1, int(round(width * scale)))
+    resized_height = max(1, int(round(height * scale)))
+    return image.resize((resized_width, resized_height), _resolve_resampling_filter(image_module))
+
+
+def _prepare_frame(
+    frame_path: Path,
+    image_module,
+    inference_max_width: int | None,
+    inference_max_height: int | None,
+) -> PreparedFrame:
+    with image_module.open(frame_path) as image_handle:
+        image = image_handle.convert("RGB")
+        target_size = (image.height, image.width)
+        inference_image = _resize_for_inference(
+            image=image,
+            image_module=image_module,
+            max_width=inference_max_width,
+            max_height=inference_max_height,
+        )
+
+    return PreparedFrame(
+        frame_path=frame_path,
+        frame_index=get_frame_index(frame_path),
+        image=inference_image,
+        target_size=target_size,
+    )
+
+
 def detect_frames(
     frames_dir: str | Path,
     output_csv: str | Path,
@@ -114,6 +174,10 @@ def detect_frames(
     box_threshold: float = 0.35,
     text_threshold: float = 0.25,
     model_id: str = DEFAULT_MODEL_ID,
+    batch_size: int = 0,
+    inference_max_width: int | None = None,
+    inference_max_height: int | None = None,
+    preload_workers: int = 0,
     progress_callback: ProgressCallback | None = None,
     log_callback: LogCallback | None = None,
 ) -> pd.DataFrame:
@@ -139,8 +203,19 @@ def detect_frames(
     output_csv.parent.mkdir(parents=True, exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    effective_batch_size = batch_size if batch_size > 0 else (4 if device == "cuda" else 2)
+    effective_preload_workers = preload_workers if preload_workers > 0 else min(4, effective_batch_size)
     _emit_log(log_callback, f"[detect_grounding_dino] Using device: {device}")
     _emit_log(log_callback, f"[detect_grounding_dino] Model: {model_id}")
+    _emit_log(log_callback, f"[detect_grounding_dino] Batch size: {effective_batch_size}")
+    if inference_max_width or inference_max_height:
+        _emit_log(
+            log_callback,
+            (
+                "[detect_grounding_dino] Downscaling frames for inference to at most "
+                f"{inference_max_width or 'full'}x{inference_max_height or 'full'}."
+            ),
+        )
 
     processor = AutoProcessor.from_pretrained(model_id)
     model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(device)
@@ -159,24 +234,44 @@ def detect_frames(
     total_frames = len(frame_paths)
     _emit_progress(progress_callback, 0, total_frames, "Loading Grounding DINO and preparing detections.")
 
-    for processed_index, frame_path in enumerate(iterator, start=1):
-        with Image.open(frame_path) as image_handle:
-            image = image_handle.convert("RGB")
-            frame_index = get_frame_index(frame_path)
+    del iterator  # The tqdm wrapper is replaced by explicit batched progress below.
+    image_loader = lambda path: _prepare_frame(
+        frame_path=path,
+        image_module=Image,
+        inference_max_width=inference_max_width,
+        inference_max_height=inference_max_height,
+    )
 
-            inputs = processor(images=image, text=text_prompt, return_tensors="pt").to(device)
-            with torch.no_grad():
-                outputs = model(**inputs)
+    processed_index = 0
+    batch_starts = range(0, len(frame_paths), effective_batch_size)
+    if progress_callback is None:
+        batch_starts = tqdm(batch_starts, desc="Running Grounding DINO")
 
-            results = _post_process_grounding_dino_results(
-                processor=processor,
-                outputs=outputs,
-                input_ids=inputs.input_ids,
-                box_threshold=box_threshold,
-                text_threshold=text_threshold,
-                target_sizes=[(image.height, image.width)],
-            )[0]
+    for batch_start in batch_starts:
+        batch_paths = frame_paths[batch_start: batch_start + effective_batch_size]
+        if effective_preload_workers > 1 and len(batch_paths) > 1:
+            with ThreadPoolExecutor(max_workers=min(effective_preload_workers, len(batch_paths))) as executor:
+                prepared_batch = list(executor.map(image_loader, batch_paths))
+        else:
+            prepared_batch = [image_loader(frame_path) for frame_path in batch_paths]
 
+        input_images = [prepared_frame.image for prepared_frame in prepared_batch]
+        target_sizes = [prepared_frame.target_size for prepared_frame in prepared_batch]
+        input_prompts = [text_prompt] * len(prepared_batch)
+        inputs = processor(images=input_images, text=input_prompts, return_tensors="pt").to(device)
+        with torch.inference_mode():
+            outputs = model(**inputs)
+
+        batch_results = _post_process_grounding_dino_results(
+            processor=processor,
+            outputs=outputs,
+            input_ids=inputs.input_ids,
+            box_threshold=box_threshold,
+            text_threshold=text_threshold,
+            target_sizes=target_sizes,
+        )
+
+        for prepared_frame, results in zip(prepared_batch, batch_results):
             boxes = results["boxes"].cpu().tolist()
             scores = results["scores"].cpu().tolist()
             labels = [str(label) for label in results["labels"]]
@@ -185,8 +280,8 @@ def detect_frames(
                 x_min, y_min, x_max, y_max = box
                 rows.append(
                     {
-                        "frame_index": frame_index,
-                        "frame_file": frame_path.name,
+                        "frame_index": prepared_frame.frame_index,
+                        "frame_file": prepared_frame.frame_path.name,
                         "detection_index": detection_index,
                         "label": label,
                         "confidence": float(score),
@@ -200,12 +295,13 @@ def detect_frames(
                     }
                 )
 
-        _emit_progress(
-            progress_callback,
-            processed_index,
-            total_frames,
-            f"Processed {frame_path.name} with {len(boxes)} detections.",
-        )
+            processed_index += 1
+            _emit_progress(
+                progress_callback,
+                processed_index,
+                total_frames,
+                f"Processed {prepared_frame.frame_path.name} with {len(boxes)} detections.",
+            )
 
     detections = pd.DataFrame(rows, columns=DETECTION_COLUMNS)
     detections.to_csv(output_csv, index=False)
@@ -238,6 +334,30 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--box-threshold", type=float, default=0.35)
     parser.add_argument("--text-threshold", type=float, default=0.25)
     parser.add_argument("--model-id", default=DEFAULT_MODEL_ID)
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=0,
+        help="How many frames to run per inference batch. Use 0 to choose an automatic default.",
+    )
+    parser.add_argument(
+        "--inference-max-width",
+        type=int,
+        default=None,
+        help="Optional maximum width for inference images before boxes are rescaled back to the original frame.",
+    )
+    parser.add_argument(
+        "--inference-max-height",
+        type=int,
+        default=None,
+        help="Optional maximum height for inference images before boxes are rescaled back to the original frame.",
+    )
+    parser.add_argument(
+        "--preload-workers",
+        type=int,
+        default=0,
+        help="Threaded frame-loading worker count. Use 0 to choose an automatic default.",
+    )
     return parser
 
 
@@ -251,6 +371,10 @@ def main() -> None:
         box_threshold=args.box_threshold,
         text_threshold=args.text_threshold,
         model_id=args.model_id,
+        batch_size=args.batch_size,
+        inference_max_width=args.inference_max_width,
+        inference_max_height=args.inference_max_height,
+        preload_workers=args.preload_workers,
     )
 
 

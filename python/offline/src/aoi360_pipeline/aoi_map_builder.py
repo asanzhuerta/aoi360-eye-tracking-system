@@ -207,6 +207,8 @@ def render_aoi_map_from_detections(
         if horizontal_pixel_offset != 0:
             aoi_map = ImageChops.offset(aoi_map, horizontal_pixel_offset, 0)
 
+    rgb24_bytes = aoi_map.tobytes()
+
     output_map_path.parent.mkdir(parents=True, exist_ok=True)
     aoi_map.save(output_map_path)
 
@@ -252,6 +254,7 @@ def render_aoi_map_from_detections(
         "source_image_width": source_width,
         "source_image_height": source_height,
         "baked_yaw_offset_degrees": float(yaw_offset_degrees),
+        "rgb24_bytes": rgb24_bytes,
         "aois": [
             {
                 "id": aoi["id"],

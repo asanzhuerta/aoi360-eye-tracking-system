@@ -132,6 +132,10 @@ def rebuild_runtime_assets(
     frame_step: int = 30,
     output_width: int = 1024,
     output_height: int = 512,
+    detection_batch_size: int = 2,
+    detection_max_width: int | None = 1920,
+    detection_max_height: int | None = 960,
+    detection_preload_workers: int = 2,
     min_confidence: float = 0.35,
     box_threshold: float = 0.35,
     text_threshold: float = 0.25,
@@ -178,6 +182,16 @@ def rebuild_runtime_assets(
     _emit_log(log_callback, f"[rebuild_runtime_assets] AOI metadata directory: {output_metadata_dir}")
     _emit_log(log_callback, f"[rebuild_runtime_assets] Manifest path: {manifest_path}")
     _emit_log(log_callback, f"[rebuild_runtime_assets] Runtime pack path: {runtime_pack_path}")
+    _emit_log(
+        log_callback,
+        (
+            "[rebuild_runtime_assets] Detection settings: "
+            f"batch_size={detection_batch_size}, "
+            f"max_width={detection_max_width}, "
+            f"max_height={detection_max_height}, "
+            f"preload_workers={detection_preload_workers}."
+        ),
+    )
 
     _emit_progress(progress_callback, "extract", 0, 1, "Starting frame extraction.")
     extraction_summary = extract_frames(
@@ -197,6 +211,10 @@ def rebuild_runtime_assets(
         text_prompt=text_prompt,
         box_threshold=box_threshold,
         text_threshold=text_threshold,
+        batch_size=detection_batch_size,
+        inference_max_width=detection_max_width,
+        inference_max_height=detection_max_height,
+        preload_workers=detection_preload_workers,
         progress_callback=lambda current, total, message: _emit_progress(
             progress_callback, "detect", current, total, message
         ),
@@ -291,6 +309,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Runtime-oriented AOI map height. Defaults to 512 for smoother standalone VR playback.",
     )
     parser.add_argument(
+        "--detection-batch-size",
+        type=int,
+        default=2,
+        help="Grounding DINO batch size. Defaults to 2 to speed up long CPU runs without getting too memory-heavy.",
+    )
+    parser.add_argument(
+        "--detection-max-width",
+        type=int,
+        default=1920,
+        help="Maximum width used during Grounding DINO inference before detections are rescaled back to the original frame.",
+    )
+    parser.add_argument(
+        "--detection-max-height",
+        type=int,
+        default=960,
+        help="Maximum height used during Grounding DINO inference before detections are rescaled back to the original frame.",
+    )
+    parser.add_argument(
+        "--detection-preload-workers",
+        type=int,
+        default=2,
+        help="Thread count for loading and resizing frame batches ahead of inference.",
+    )
+    parser.add_argument(
         "--yaw-offset-degrees",
         type=float,
         default=270.0,
@@ -320,6 +362,10 @@ def main() -> None:
         frame_step=args.frame_step,
         output_width=args.output_width,
         output_height=args.output_height,
+        detection_batch_size=args.detection_batch_size,
+        detection_max_width=args.detection_max_width,
+        detection_max_height=args.detection_max_height,
+        detection_preload_workers=args.detection_preload_workers,
         min_confidence=args.min_confidence,
         box_threshold=args.box_threshold,
         text_threshold=args.text_threshold,
