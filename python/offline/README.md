@@ -7,7 +7,7 @@ Offline Python pipeline for the AOI360 project.
 The current branch covers the first usable offline loop:
 
 1. extract sparse frames from a 360 video
-2. run Grounding DINO over those frames
+2. run an open-vocabulary detector over those frames
 3. convert reviewed detections into a Unity-compatible AOI map and metadata JSON
 
 This is not yet the final automated pipeline with segmentation, temporal propagation, seam handling, and tracking. It is the practical first version for testing AOI authoring against the Unity runtime.
@@ -16,6 +16,7 @@ The pipeline now also includes:
 
 - a master rebuild script that regenerates the runtime assets from scratch
 - a compact Tkinter GUI that lets an operator select a video, launch preprocessing, and monitor progress and logs live
+- detector selection between `grounding_dino` and `yolo_world` while preserving the same detections CSV schema for the AOI builders
 - CUDA-aware runtime inspection so the preprocessing stage can report whether it is running on `cpu` or `cuda`
 - runtime-oriented exports with:
   - sparse AOI keyframes every `30` video frames by default
@@ -32,7 +33,7 @@ Recommended:
 pip install -e python/offline
 ```
 
-If you have a compatible NVIDIA GPU and want Grounding DINO to use CUDA, reinstall PyTorch in the project environment with the official CUDA wheels. For the current setup we used the `cu126` index from the official PyTorch install guide:
+If you have a compatible NVIDIA GPU and want the detector stage to use CUDA, reinstall PyTorch in the project environment with the official CUDA wheels. For the current setup we used the `cu126` index from the official PyTorch install guide:
 
 ```bash
 python/offline/.venv/Scripts/python.exe -m pip install --upgrade --force-reinstall torch torchvision --index-url https://download.pytorch.org/whl/cu126
@@ -43,6 +44,11 @@ Alternative:
 ```bash
 pip install -r python/offline/requirements.txt
 ```
+
+Note:
+
+- The first YOLO-World run downloads the pretrained weights and the CLIP text encoder cache.
+- After that warm-up, repeated runs reuse the cached artifacts.
 
 ## Scripts
 
@@ -58,27 +64,33 @@ python python/offline/scripts/extract_frames.py --video-path data/input_videos/v
 python python/offline/scripts/detect_grounding_dino.py --frames-dir data/frames/video_360 --output-csv data/interim/detections/video_360_grounding_dino_boxes.csv --text-prompt "person. face. bottle. screen. product."
 ```
 
-### 3. Build one AOI map for Unity
+### 3. Run YOLO-World
 
 ```bash
-python python/offline/scripts/build_aoi_map.py --detections-csv data/interim/detections/video_360_grounding_dino_boxes.csv --frames-dir data/frames/video_360 --output-map-path data/processed/id_maps/video_360_aoi_map.png --output-metadata-path data/processed/metadata/video_360_aoi_map_metadata.json --video-name video_360.mp4 --fps 30 --frame-index 0
+python python/offline/scripts/detect_yolo_world.py --frames-dir data/frames/video_360 --output-csv data/interim/detections/video_360_yolo_world_boxes.csv --text-prompt "person. face. bottle. screen. product."
 ```
 
-### 4. Build AOI maps for every detected frame
+### 4. Build one AOI map for Unity
 
 ```bash
-python python/offline/scripts/build_aoi_sequence.py --detections-csv data/interim/detections/video_360_grounding_dino_boxes.csv --frames-dir data/frames/video_360 --output-maps-dir data/processed/id_maps/video_360 --output-metadata-dir data/processed/metadata/video_360 --manifest-path data/processed/metadata/video_360_aoi_sequence_manifest.json --video-name video_360.mp4 --fps 30
+python python/offline/scripts/build_aoi_map.py --detections-csv data/interim/detections/video_360_yolo_world_boxes.csv --frames-dir data/frames/video_360 --output-map-path data/processed/id_maps/video_360_aoi_map.png --output-metadata-path data/processed/metadata/video_360_aoi_map_metadata.json --video-name video_360.mp4 --fps 30 --frame-index 0
 ```
 
-### 5. Rebuild the complete runtime asset set from scratch
+### 5. Build AOI maps for every detected frame
 
-This command derives the output layout from the selected video name, cleans previous generated assets, exports sparse AOI keyframes every `30` source frames, writes runtime-friendly `1024x512` AOI maps, and uses device-aware Grounding DINO defaults.
+```bash
+python python/offline/scripts/build_aoi_sequence.py --detections-csv data/interim/detections/video_360_yolo_world_boxes.csv --frames-dir data/frames/video_360 --output-maps-dir data/processed/id_maps/video_360 --output-metadata-dir data/processed/metadata/video_360 --manifest-path data/processed/metadata/video_360_aoi_sequence_manifest.json --video-name video_360.mp4 --fps 30
+```
+
+### 6. Rebuild the complete runtime asset set from scratch
+
+This command derives the output layout from the selected video name, cleans previous generated assets, exports sparse AOI keyframes every `30` source frames, writes runtime-friendly `1024x512` AOI maps, and uses device-aware detector defaults. On this branch the default detector is `yolo_world`, but you can still switch back to `grounding_dino`.
 
 ```bash
 python python/offline/scripts/rebuild_runtime_assets.py --video-path data/input_videos/video_360.mp4 --clean
 ```
 
-### 6. Launch the preprocessing GUI
+### 7. Launch the preprocessing GUI
 
 ```bash
 python python/offline/scripts/preprocess_gui.py
@@ -87,6 +99,7 @@ python python/offline/scripts/preprocess_gui.py
 The GUI lets you:
 
 - select the input 360 video
+- choose the detector backend and pretrained model id
 - tweak prompt, confidence, frame stride, output resolution, batch settings, and yaw offset
 - launch the full preprocessing pipeline from one button
 - follow stage progress and useful logs in real time
@@ -105,7 +118,7 @@ The GUI lets you:
 The rebuild script and GUI now auto-derive these paths from the selected video stem, so a file such as `my_scene.mp4` will produce:
 
 - `data/frames/my_scene/`
-- `data/interim/detections/my_scene_grounding_dino_boxes.csv`
+- `data/interim/detections/my_scene_yolo_world_boxes.csv`
 - `data/processed/id_maps/my_scene/`
 - `data/processed/metadata/my_scene/`
 - `data/processed/metadata/my_scene_aoi_sequence_manifest.json`
