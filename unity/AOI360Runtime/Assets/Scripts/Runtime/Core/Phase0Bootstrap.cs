@@ -30,6 +30,10 @@ namespace AOI360.Runtime.Core
         private int lastHighlightedAoiId = int.MinValue;
         private Texture2D lastOverlaySourceTexture;
         private Color lastFocusedAoiColor = Color.clear;
+        private float lastYawOffsetDegrees = float.NaN;
+        private float lastVerticalOffsetDegrees = float.NaN;
+        private bool? lastHorizontalFlip;
+        private bool? lastVerticalFlip;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void EnsureBootstrap()
@@ -88,6 +92,12 @@ namespace AOI360.Runtime.Core
             }
 
             if (currentSourceTexture != lastOverlaySourceTexture)
+            {
+                RefreshOverlayMaterial(forceRefresh: true);
+                return;
+            }
+
+            if (HasProjectionCalibrationChanged())
             {
                 RefreshOverlayMaterial(forceRefresh: true);
                 return;
@@ -274,6 +284,11 @@ namespace AOI360.Runtime.Core
                 material.SetFloat("_YawOffsetDegrees", sphericalMapper != null ? sphericalMapper.YawOffsetDegrees : 0f);
             }
 
+            if (material.HasProperty("_VerticalOffsetDegrees"))
+            {
+                material.SetFloat("_VerticalOffsetDegrees", sphericalMapper != null ? sphericalMapper.VerticalOffsetDegrees : 0f);
+            }
+
             if (material.HasProperty("_FlipHorizontal"))
             {
                 material.SetFloat("_FlipHorizontal", sphericalMapper != null && sphericalMapper.FlipHorizontally ? 1f : 0f);
@@ -333,6 +348,7 @@ namespace AOI360.Runtime.Core
 
             material.renderQueue = (int)RenderQueue.Transparent;
             material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            CacheProjectionCalibrationState();
         }
 
         private void UpdateFocusedOverlayState()
@@ -354,6 +370,36 @@ namespace AOI360.Runtime.Core
             {
                 overlayMaterial.SetFloat("_HasFocusedAoi", aoiLookup != null && aoiLookup.CurrentAOIId > 0 ? 1f : 0f);
             }
+        }
+
+        private bool HasProjectionCalibrationChanged()
+        {
+            if (sphericalMapper == null)
+            {
+                return false;
+            }
+
+            return !Mathf.Approximately(lastYawOffsetDegrees, sphericalMapper.YawOffsetDegrees) ||
+                   !Mathf.Approximately(lastVerticalOffsetDegrees, sphericalMapper.VerticalOffsetDegrees) ||
+                   lastHorizontalFlip != sphericalMapper.FlipHorizontally ||
+                   lastVerticalFlip != sphericalMapper.FlipVertically;
+        }
+
+        private void CacheProjectionCalibrationState()
+        {
+            if (sphericalMapper == null)
+            {
+                lastYawOffsetDegrees = 0f;
+                lastVerticalOffsetDegrees = 0f;
+                lastHorizontalFlip = false;
+                lastVerticalFlip = false;
+                return;
+            }
+
+            lastYawOffsetDegrees = sphericalMapper.YawOffsetDegrees;
+            lastVerticalOffsetDegrees = sphericalMapper.VerticalOffsetDegrees;
+            lastHorizontalFlip = sphericalMapper.FlipHorizontally;
+            lastVerticalFlip = sphericalMapper.FlipVertically;
         }
     }
 }

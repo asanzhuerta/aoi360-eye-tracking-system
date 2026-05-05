@@ -6,6 +6,7 @@ Shader "AOI360/Equirectangular Overlay"
         _BaseColor("Tint", Color) = (1,1,1,1)
         _FocusedAoiColor("Focused AOI Color", Color) = (0,0,0,0)
         _YawOffsetDegrees("Yaw Offset Degrees", Float) = 0
+        _VerticalOffsetDegrees("Vertical Offset Degrees", Float) = 0
         _FlipHorizontal("Flip Horizontal", Float) = 0
         _FlipVertical("Flip Vertical", Float) = 0
         _BaseOpacity("Base Opacity", Float) = 0.12
@@ -56,6 +57,7 @@ Shader "AOI360/Equirectangular Overlay"
                 float4 _BaseColor;
                 float4 _FocusedAoiColor;
                 float _YawOffsetDegrees;
+                float _VerticalOffsetDegrees;
                 float _FlipHorizontal;
                 float _FlipVertical;
                 float _BaseOpacity;
@@ -79,7 +81,8 @@ Shader "AOI360/Equirectangular Overlay"
                 float elevation = asin(clamp(dir.y, -1.0, 1.0));
 
                 float u = frac(((azimuth + PI) / (2.0 * PI)) + (_YawOffsetDegrees / 360.0));
-                float v = 0.5 - (elevation / PI);
+                float adjustedElevation = elevation + radians(_VerticalOffsetDegrees);
+                float v = 0.5 - (adjustedElevation / PI);
 
                 if (_FlipHorizontal > 0.5)
                 {

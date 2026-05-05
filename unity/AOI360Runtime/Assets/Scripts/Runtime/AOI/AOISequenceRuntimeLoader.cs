@@ -85,6 +85,7 @@ namespace AOI360.Runtime.AOI
         [SerializeField] private bool clampToNearestPreviousKeyframe = true;
         [SerializeField] private bool preloadNextKeyframe = true;
         [SerializeField] private bool resetSphericalYawWhenManifestHasBakedOffset = true;
+        [SerializeField] private bool preserveEditorProjectionCalibration = true;
 
         [Header("Debug")]
         [SerializeField] private bool logSequenceEvents = true;
@@ -355,8 +356,14 @@ namespace AOI360.Runtime.AOI
                 return;
             }
 
+            if (preserveEditorProjectionCalibration)
+            {
+                return;
+            }
+
             sphericalMapper.SetProjectionCalibration(
                 yawDegrees: 0f,
+                verticalDegrees: sphericalMapper.VerticalOffsetDegrees,
                 horizontalFlip: sphericalMapper.FlipHorizontally,
                 verticalFlip: sphericalMapper.FlipVertically
             );

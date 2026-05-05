@@ -57,6 +57,8 @@ namespace AOI360.Runtime.Modules
             double videoTime = videoPlayback != null ? videoPlayback.CurrentTime : 0d;
 
             Vector2 uv = sphericalMapper.CurrentUV;
+            float yawOffset = sphericalMapper.YawOffsetDegrees;
+            float verticalOffset = sphericalMapper.VerticalOffsetDegrees;
             int aoiId = aoiLookup.CurrentAOIId;
             float confidence = aoiLookup.CurrentAOIConfidence;
             int fixationSteps = debugVisualizer != null ? debugVisualizer.ActiveFixationCommitCount : 0;
@@ -83,6 +85,7 @@ namespace AOI360.Runtime.Modules
                 $"Frame: {frameIndex}\n" +
                 $"Video Time: {videoTime:F3}\n" +
                 $"UV: ({uv.x:F3}, {uv.y:F3})\n" +
+                $"Projection: yaw={yawOffset:F1} | vOff={verticalOffset:F1} | fh={(sphericalMapper.FlipHorizontally ? 1 : 0)} | fv={(sphericalMapper.FlipVertically ? 1 : 0)}\n" +
                 $"Tracking Source: {trackingSource}\n" +
                 $"AOI Seq: {sequenceFolder}\n" +
                 $"AOI Keyframe: {keyframeFrame}\n" +
