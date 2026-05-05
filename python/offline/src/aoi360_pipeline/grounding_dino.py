@@ -180,6 +180,7 @@ def detect_frames(
     inference_max_width: int | None = None,
     inference_max_height: int | None = None,
     preload_workers: int = 0,
+    precision: str = "auto",
     progress_callback: ProgressCallback | None = None,
     log_callback: LogCallback | None = None,
 ) -> pd.DataFrame:
@@ -210,10 +211,17 @@ def detect_frames(
     effective_preload_workers = (
         preload_workers if preload_workers > 0 else min(runtime_summary.recommended_preload_workers, effective_batch_size)
     )
+    resolved_precision = runtime_summary.recommended_precision if precision == "auto" else precision.lower()
+    if resolved_precision not in {"fp16", "fp32"}:
+        raise ValueError("precision must be one of: auto, fp16, fp32")
+    if device != "cuda":
+        resolved_precision = "fp32"
+
     _emit_log(log_callback, f"[detect_grounding_dino] Runtime: {runtime_summary.short_label}")
     _emit_log(log_callback, f"[detect_grounding_dino] Using device: {device}")
     _emit_log(log_callback, f"[detect_grounding_dino] Model: {model_id}")
     _emit_log(log_callback, f"[detect_grounding_dino] Batch size: {effective_batch_size}")
+    _emit_log(log_callback, f"[detect_grounding_dino] Precision: {resolved_precision}")
     if inference_max_width or inference_max_height:
         _emit_log(
             log_callback,
@@ -223,8 +231,19 @@ def detect_frames(
             ),
         )
 
+    if device == "cuda":
+        torch.backends.cudnn.benchmark = True
+        try:
+            torch.set_float32_matmul_precision("high")
+        except Exception:
+            pass
+
+    model_kwargs = {}
+    if device == "cuda" and resolved_precision == "fp16":
+        model_kwargs["dtype"] = torch.float16
+
     processor = AutoProcessor.from_pretrained(model_id)
-    model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id).to(device)
+    model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id, **model_kwargs).to(device)
     model.eval()
 
     frame_paths = sorted([*frames_dir.glob("*.jpg"), *frames_dir.glob("*.jpeg"), *frames_dir.glob("*.png")])
@@ -266,7 +285,11 @@ def detect_frames(
         input_prompts = [text_prompt] * len(prepared_batch)
         inputs = processor(images=input_images, text=input_prompts, return_tensors="pt").to(device)
         with torch.inference_mode():
-            outputs = model(**inputs)
+            if device == "cuda" and resolved_precision == "fp16":
+                with torch.autocast(device_type="cuda", dtype=torch.float16):
+                    outputs = model(**inputs)
+            else:
+                outputs = model(**inputs)
 
         batch_results = _post_process_grounding_dino_results(
             processor=processor,
@@ -364,6 +387,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="Threaded frame-loading worker count. Use 0 to choose an automatic default.",
     )
+    parser.add_argument(
+        "--precision",
+        default="auto",
+        choices=["auto", "fp16", "fp32"],
+        help="Inference precision. 'auto' uses fp16 on CUDA and fp32 on CPU.",
+    )
     return parser
 
 
@@ -381,6 +410,7 @@ def main() -> None:
         inference_max_width=args.inference_max_width,
         inference_max_height=args.inference_max_height,
         preload_workers=args.preload_workers,
+        precision=args.precision,
     )
 
 

@@ -137,6 +137,7 @@ def rebuild_runtime_assets(
     detection_max_width: int | None = 1920,
     detection_max_height: int | None = 960,
     detection_preload_workers: int = 0,
+    detection_precision: str = "auto",
     min_confidence: float = 0.35,
     box_threshold: float = 0.35,
     text_threshold: float = 0.25,
@@ -198,9 +199,20 @@ def rebuild_runtime_assets(
             f"batch_size={resolved_detection_batch_size}, "
             f"max_width={detection_max_width}, "
             f"max_height={detection_max_height}, "
-            f"preload_workers={resolved_detection_preload_workers}."
+            f"preload_workers={resolved_detection_preload_workers}, "
+            f"precision={detection_precision}."
         ),
     )
+    if frame_step > every_n_frames:
+        _emit_log(
+            log_callback,
+            (
+                "[rebuild_runtime_assets] Note: export frame step is larger than the extraction stride. "
+                f"With every_n_frames={every_n_frames} and frame_step={frame_step}, Grounding DINO still runs on "
+                "intermediate sparse frames that will not become AOI keyframes. For maximum speed, use the same "
+                "value for both settings unless you explicitly need denser detections."
+            ),
+        )
 
     _emit_progress(progress_callback, "extract", 0, 1, "Starting frame extraction.")
     extraction_summary = extract_frames(
@@ -224,6 +236,7 @@ def rebuild_runtime_assets(
         inference_max_width=detection_max_width,
         inference_max_height=detection_max_height,
         preload_workers=resolved_detection_preload_workers,
+        precision=detection_precision,
         progress_callback=lambda current, total, message: _emit_progress(
             progress_callback, "detect", current, total, message
         ),
@@ -342,6 +355,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Thread count for loading and resizing frame batches ahead of inference. Use 0 to pick a device-aware default automatically.",
     )
     parser.add_argument(
+        "--detection-precision",
+        default="auto",
+        choices=["auto", "fp16", "fp32"],
+        help="Grounding DINO precision. 'auto' uses fp16 on CUDA and fp32 on CPU.",
+    )
+    parser.add_argument(
         "--yaw-offset-degrees",
         type=float,
         default=0.0,
@@ -375,6 +394,7 @@ def main() -> None:
         detection_max_width=args.detection_max_width,
         detection_max_height=args.detection_max_height,
         detection_preload_workers=args.detection_preload_workers,
+        detection_precision=args.detection_precision,
         min_confidence=args.min_confidence,
         box_threshold=args.box_threshold,
         text_threshold=args.text_threshold,

@@ -16,6 +16,7 @@ class TorchRuntimeSummary:
     device_name: str
     total_memory_gb: float | None
     default_device: str
+    recommended_precision: str
     recommended_batch_size: int
     recommended_preload_workers: int
 
@@ -46,6 +47,7 @@ def inspect_torch_runtime(torch_module=None) -> TorchRuntimeSummary:
                 device_name="CPU",
                 total_memory_gb=None,
                 default_device="cpu",
+                recommended_precision="fp32",
                 recommended_batch_size=2,
                 recommended_preload_workers=2,
             )
@@ -65,6 +67,7 @@ def inspect_torch_runtime(torch_module=None) -> TorchRuntimeSummary:
             device_name="CPU",
             total_memory_gb=None,
             default_device="cpu",
+            recommended_precision="fp32",
             recommended_batch_size=2,
             recommended_preload_workers=2,
         )
@@ -89,6 +92,7 @@ def inspect_torch_runtime(torch_module=None) -> TorchRuntimeSummary:
         device_name=device_name,
         total_memory_gb=total_memory_gb,
         default_device="cuda",
+        recommended_precision="fp16",
         recommended_batch_size=recommended_batch_size,
         recommended_preload_workers=4,
     )
