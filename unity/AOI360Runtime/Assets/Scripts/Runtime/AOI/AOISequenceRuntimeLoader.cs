@@ -15,7 +15,11 @@ namespace AOI360.Runtime.AOI
         // This component is the runtime boundary between the offline Python
         // exports and the Unity experiment scene. It keeps the runtime path
         // lean by preferring the packed RGB stream over per-keyframe PNG loads.
-        private const string TargetSceneName = "Phase0_360Playback_VR";
+        private static readonly string[] TargetSceneNames =
+        {
+            "Phase0_360Playback_VR_sampleRIG",
+            "Phase0_360Playback_VR"
+        };
         private const string RuntimeLoaderName = "AOISequenceRuntimeLoader_Runtime";
 
         [Serializable]
@@ -126,7 +130,7 @@ namespace AOI360.Runtime.AOI
         private static void EnsureLoader()
         {
             Scene activeScene = SceneManager.GetActiveScene();
-            if (activeScene.name != TargetSceneName)
+            if (!IsTargetScene(activeScene.name))
             {
                 return;
             }
@@ -142,7 +146,7 @@ namespace AOI360.Runtime.AOI
 
         private void Awake()
         {
-            if (SceneManager.GetActiveScene().name != TargetSceneName)
+            if (!IsTargetScene(SceneManager.GetActiveScene().name))
             {
                 enabled = false;
                 return;
@@ -151,6 +155,19 @@ namespace AOI360.Runtime.AOI
             ResolveReferences();
             ApplySelectedStimulusOverride();
             TryLoadManifest();
+        }
+
+        private static bool IsTargetScene(string sceneName)
+        {
+            for (int i = 0; i < TargetSceneNames.Length; i++)
+            {
+                if (string.Equals(sceneName, TargetSceneNames[i], StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void Update()

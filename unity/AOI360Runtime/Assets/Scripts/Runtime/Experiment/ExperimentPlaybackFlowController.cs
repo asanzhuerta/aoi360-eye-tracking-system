@@ -12,8 +12,23 @@ namespace AOI360.Runtime.Experiment
     [DefaultExecutionOrder(-170)]
     public class ExperimentPlaybackFlowController : MonoBehaviour
     {
-        private const string TargetSceneName = "Phase0_360Playback_VR";
+        private static readonly string[] TargetSceneNames =
+        {
+            "Phase0_360Playback_VR_sampleRIG",
+            "Phase0_360Playback_VR"
+        };
         private const string RuntimeObjectName = "ExperimentPlaybackFlowController_Runtime";
+
+        [Header("Scene References")]
+        [SerializeField] private VideoPlayback sceneVideoPlayback;
+        [SerializeField] private AOISequenceRuntimeLoader sceneAoiSequenceRuntimeLoader;
+        [SerializeField] private DataRecorder sceneDataRecorder;
+
+        [Header("Scene Overlay")]
+        [SerializeField] private Canvas sceneOverlayCanvas;
+        [SerializeField] private TextMeshProUGUI sceneTitleText;
+        [SerializeField] private TextMeshProUGUI sceneCountdownText;
+        [SerializeField] private TextMeshProUGUI sceneSubtitleText;
 
         private VideoPlayback videoPlayback;
         private AOISequenceRuntimeLoader aoiSequenceRuntimeLoader;
@@ -28,7 +43,7 @@ namespace AOI360.Runtime.Experiment
         private static void EnsureController()
         {
             Scene activeScene = SceneManager.GetActiveScene();
-            if (activeScene.name != TargetSceneName)
+            if (!IsTargetScene(activeScene.name))
             {
                 return;
             }
@@ -44,7 +59,7 @@ namespace AOI360.Runtime.Experiment
 
         private void Awake()
         {
-            if (SceneManager.GetActiveScene().name != TargetSceneName)
+            if (!IsTargetScene(SceneManager.GetActiveScene().name))
             {
                 enabled = false;
                 return;
@@ -118,14 +133,29 @@ namespace AOI360.Runtime.Experiment
 
         private void ResolveReferences()
         {
+            if (videoPlayback == null && sceneVideoPlayback != null)
+            {
+                videoPlayback = sceneVideoPlayback;
+            }
+
             if (videoPlayback == null)
             {
                 videoPlayback = FindFirstObjectByType<VideoPlayback>();
             }
 
+            if (aoiSequenceRuntimeLoader == null && sceneAoiSequenceRuntimeLoader != null)
+            {
+                aoiSequenceRuntimeLoader = sceneAoiSequenceRuntimeLoader;
+            }
+
             if (aoiSequenceRuntimeLoader == null)
             {
                 aoiSequenceRuntimeLoader = FindFirstObjectByType<AOISequenceRuntimeLoader>();
+            }
+
+            if (dataRecorder == null && sceneDataRecorder != null)
+            {
+                dataRecorder = sceneDataRecorder;
             }
 
             if (dataRecorder == null)
@@ -141,6 +171,21 @@ namespace AOI360.Runtime.Experiment
                 return;
             }
 
+            if (sceneOverlayCanvas != null)
+            {
+                overlayCanvas = sceneOverlayCanvas;
+                overlayCanvas.gameObject.SetActive(true);
+                if (overlayCanvas.renderMode == RenderMode.WorldSpace && overlayCanvas.worldCamera == null)
+                {
+                    overlayCanvas.worldCamera = ResolvePresentationCamera();
+                }
+
+                titleText = sceneTitleText;
+                countdownText = sceneCountdownText;
+                subtitleText = sceneSubtitleText;
+                return;
+            }
+
             GameObject canvasObject = new GameObject(
                 "ExperimentCountdownCanvas",
                 typeof(Canvas),
@@ -149,15 +194,16 @@ namespace AOI360.Runtime.Experiment
             );
 
             overlayCanvas = canvasObject.GetComponent<Canvas>();
-            overlayCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
             overlayCanvas.sortingOrder = 1200;
 
             CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1600f, 900f);
             scaler.matchWidthOrHeight = 0.5f;
+            scaler.dynamicPixelsPerUnit = 16f;
 
             RectTransform canvasRect = canvasObject.GetComponent<RectTransform>();
+            ConfigureOverlayCanvas(canvasRect);
 
             RectTransform blocker = ExperimentRuntimeUi.CreateUiObject(
                 "Blocker",
@@ -251,9 +297,63 @@ namespace AOI360.Runtime.Experiment
         {
             if (overlayCanvas != null)
             {
-                Destroy(overlayCanvas.gameObject);
+                if (overlayCanvas == sceneOverlayCanvas)
+                {
+                    overlayCanvas.gameObject.SetActive(false);
+                }
+                else
+                {
+                    Destroy(overlayCanvas.gameObject);
+                }
+
                 overlayCanvas = null;
             }
+        }
+
+        private void ConfigureOverlayCanvas(RectTransform canvasRect)
+        {
+            Camera presentationCamera = ResolvePresentationCamera();
+            if (presentationCamera == null)
+            {
+                overlayCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+                return;
+            }
+
+            overlayCanvas.renderMode = RenderMode.WorldSpace;
+            overlayCanvas.worldCamera = presentationCamera;
+
+            canvasRect.SetParent(presentationCamera.transform, false);
+            canvasRect.anchorMin = new Vector2(0.5f, 0.5f);
+            canvasRect.anchorMax = new Vector2(0.5f, 0.5f);
+            canvasRect.pivot = new Vector2(0.5f, 0.5f);
+            canvasRect.sizeDelta = new Vector2(1400f, 900f);
+            canvasRect.localPosition = new Vector3(0f, 0f, 1.45f);
+            canvasRect.localRotation = Quaternion.identity;
+            canvasRect.localScale = Vector3.one * 0.00115f;
+        }
+
+        private static Camera ResolvePresentationCamera()
+        {
+            Camera mainCamera = Camera.main;
+            if (mainCamera != null && mainCamera.gameObject.activeInHierarchy)
+            {
+                return mainCamera;
+            }
+
+            return FindFirstObjectByType<Camera>();
+        }
+
+        private static bool IsTargetScene(string sceneName)
+        {
+            for (int i = 0; i < TargetSceneNames.Length; i++)
+            {
+                if (string.Equals(sceneName, TargetSceneNames[i], System.StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

@@ -148,15 +148,29 @@ namespace EyeGaze.Runtime.Core
         // Use main camera if none assigned
         private void ResolveReferenceCamera()
         {
-            if (referenceCamera == null)
+            bool hasValidReferenceCamera = referenceCamera != null && referenceCamera.gameObject.activeInHierarchy;
+            if (!hasValidReferenceCamera)
             {
-                referenceCamera = Camera.main;
+                referenceCamera = ResolveActiveCamera();
             }
 
-            if (trackingSpace == null && referenceCamera != null && referenceCamera.transform.parent != null)
+            if ((trackingSpace == null || !trackingSpace.gameObject.activeInHierarchy) &&
+                referenceCamera != null &&
+                referenceCamera.transform.parent != null)
             {
                 trackingSpace = referenceCamera.transform.parent;
             }
+        }
+
+        private static Camera ResolveActiveCamera()
+        {
+            Camera mainCamera = Camera.main;
+            if (mainCamera != null && mainCamera.gameObject.activeInHierarchy)
+            {
+                return mainCamera;
+            }
+
+            return FindFirstObjectByType<Camera>();
         }
 
         // Cache all assigned MonoBehaviours that implement IEyeGazeModule

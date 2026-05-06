@@ -540,6 +540,7 @@ MonoBehaviour:
   eyeGazeSystem: {fileID: 0}
   debugVisualizer: {fileID: 0}
   debugText: {fileID: 259122112}
+  refreshIntervalSeconds: 0.1
 --- !u!1 &233558554
 GameObject:
   m_ObjectHideFlags: 0
@@ -595,6 +596,8 @@ MonoBehaviour:
   grayscaleTolerance: 0.01
   neighborhoodRadiusDegrees: 1.5
   neighborhoodSamples: 8
+  throttleConfidenceUpdates: 1
+  confidenceUpdateIntervalSeconds: 0.05
   logAOIChanges: 1
   logContinuous: 0
   logEveryNFrames: 30
@@ -1153,6 +1156,7 @@ MonoBehaviour:
   targetTexture: {fileID: 8400000, guid: 4627997114277f641b5710201848229e, type: 2}
   skyboxMaterial: {fileID: 2100000, guid: c50b62a524c3d4a4c818befcb144d567, type: 2}
   logVideoEvents: 1
+  allowFrameDrop: 1
 --- !u!328 &730990566
 VideoPlayer:
   m_ObjectHideFlags: 0
@@ -1560,6 +1564,7 @@ MonoBehaviour:
   overlaySphereRadius: 5
   overlayOpacity: 0.05
   focusedOverlayOpacity: 0.1
+  focusedColorTolerance: 0.0025
 --- !u!1 &1436281264
 GameObject:
   m_ObjectHideFlags: 0
@@ -1638,9 +1643,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::AOI360.Runtime.Mapping.SphericalMapper
   gazeDirectionSource: {fileID: 189643246}
   allowFallbackToTransformSource: 1
-  yawOffsetDegrees: 0
+  yawOffsetDegrees: 180
+  verticalOffsetDegrees: 15
   flipHorizontally: 0
-  flipVertically: 0
+  flipVertically: 1
   logValues: 1
   logEveryNFrames: 30
 --- !u!1 &1560640327

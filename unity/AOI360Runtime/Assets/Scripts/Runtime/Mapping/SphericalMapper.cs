@@ -123,9 +123,20 @@ namespace AOI360.Runtime.Mapping
             }
 
             // Prioridad 2: fallback temporal usando la cámara / transform de referencia
-            if (allowFallbackToTransformSource && gazeDirectionSource != null)
+            Transform fallbackSource = gazeDirectionSource;
+            if (fallbackSource == null || !fallbackSource.gameObject.activeInHierarchy)
             {
-                Vector3 fallbackDirection = gazeDirectionSource.forward;
+                Camera fallbackCamera = Camera.main ?? FindFirstObjectByType<Camera>();
+                if (fallbackCamera != null)
+                {
+                    fallbackSource = fallbackCamera.transform;
+                    gazeDirectionSource = fallbackSource;
+                }
+            }
+
+            if (allowFallbackToTransformSource && fallbackSource != null)
+            {
+                Vector3 fallbackDirection = fallbackSource.forward;
 
                 if (fallbackDirection.sqrMagnitude > 0.000001f)
                 {

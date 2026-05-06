@@ -12,7 +12,11 @@ namespace AOI360.Runtime.Core
         // This bootstrap owns the optional AOI overlay layer used for in-headset
         // validation. It should stay visually helpful without competing with the
         // main video playback path for CPU time.
-        private const string TargetSceneName = "Phase0_360Playback_VR";
+        private static readonly string[] TargetSceneNames =
+        {
+            "Phase0_360Playback_VR_sampleRIG",
+            "Phase0_360Playback_VR"
+        };
         private const string RuntimeBootstrapName = "Phase0Bootstrap_Runtime";
 
         [Header("Overlay")]
@@ -39,7 +43,7 @@ namespace AOI360.Runtime.Core
         private static void EnsureBootstrap()
         {
             Scene activeScene = SceneManager.GetActiveScene();
-            if (activeScene.name != TargetSceneName)
+            if (!IsTargetScene(activeScene.name))
             {
                 return;
             }
@@ -55,7 +59,7 @@ namespace AOI360.Runtime.Core
 
         private void Awake()
         {
-            if (SceneManager.GetActiveScene().name != TargetSceneName)
+            if (!IsTargetScene(SceneManager.GetActiveScene().name))
             {
                 enabled = false;
                 return;
@@ -64,6 +68,19 @@ namespace AOI360.Runtime.Core
             ResolveReferences();
             EnsureOverlaySphere();
             RefreshOverlayMaterial(forceRefresh: true);
+        }
+
+        private static bool IsTargetScene(string sceneName)
+        {
+            for (int i = 0; i < TargetSceneNames.Length; i++)
+            {
+                if (string.Equals(sceneName, TargetSceneNames[i], System.StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void Update()

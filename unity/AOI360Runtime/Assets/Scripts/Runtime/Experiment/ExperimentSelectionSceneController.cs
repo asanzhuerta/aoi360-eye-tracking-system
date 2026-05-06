@@ -13,9 +13,23 @@ namespace AOI360.Runtime.Experiment
     [DefaultExecutionOrder(-250)]
     public class ExperimentSelectionSceneController : MonoBehaviour
     {
-        private const string TargetSceneName = "SampleScene";
-        private const string PlaybackSceneName = "Phase0_360Playback_VR";
+        private static readonly string[] TargetSceneNames = { "Initial_Scene", "SampleScene" };
+        private static readonly string[] PlaybackSceneCandidates =
+        {
+            "Phase0_360Playback_VR_sampleRIG",
+            "Phase0_360Playback_VR"
+        };
+
         private const string RuntimeObjectName = "ExperimentSelectionSceneController_Runtime";
+
+        [Header("Scene UI")]
+        [SerializeField] private bool preferSceneUi = true;
+        [SerializeField] private Canvas sceneCanvas;
+        [SerializeField] private RectTransform sceneListContentRoot;
+        [SerializeField] private Button sceneStimulusButtonTemplate;
+        [SerializeField] private TextMeshProUGUI sceneStatusText;
+        [SerializeField] private TextMeshProUGUI sceneSourceSummaryText;
+        [SerializeField] private Button sceneRefreshButton;
 
         private readonly List<GameObject> dynamicUiObjects = new();
 
@@ -25,12 +39,13 @@ namespace AOI360.Runtime.Experiment
         private TextMeshProUGUI sourceSummaryText;
         private Camera presentationCamera;
         private bool isLoadingSelection;
+        private InputActionAsset runtimeUiActionsAsset;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void EnsureController()
         {
             Scene activeScene = SceneManager.GetActiveScene();
-            if (activeScene.name != TargetSceneName)
+            if (!IsSelectionScene(activeScene.name))
             {
                 return;
             }
@@ -46,7 +61,7 @@ namespace AOI360.Runtime.Experiment
 
         private void Awake()
         {
-            if (SceneManager.GetActiveScene().name != TargetSceneName)
+            if (!IsSelectionScene(SceneManager.GetActiveScene().name))
             {
                 enabled = false;
                 return;
@@ -57,7 +72,13 @@ namespace AOI360.Runtime.Experiment
             EnsureEventSystem();
             presentationCamera = ResolvePresentationCamera();
             EnsureTrackedVrCamera(presentationCamera);
-            BuildRuntimeUi();
+            ResolveSceneUiReferences();
+
+            if (!TryUseSceneUi())
+            {
+                BuildRuntimeUi();
+            }
+
             PopulateStimulusList();
         }
 
@@ -73,6 +94,13 @@ namespace AOI360.Runtime.Experiment
             }
 
             dynamicUiObjects.Clear();
+
+            if (runtimeUiActionsAsset != null)
+            {
+                runtimeUiActionsAsset.Disable();
+                Destroy(runtimeUiActionsAsset);
+                runtimeUiActionsAsset = null;
+            }
         }
 
         private void EnsureEventSystem()
@@ -97,13 +125,225 @@ namespace AOI360.Runtime.Experiment
                 inputModule = eventSystem.gameObject.AddComponent<InputSystemUIInputModule>();
             }
 
-            if (inputModule.actionsAsset == null)
+            ConfigureEventSystemInput(inputModule);
+            inputModule.deselectOnBackgroundClick = true;
+            inputModule.pointerBehavior = UIPointerBehavior.SingleMouseOrPenButMultiTouchAndTrack;
+            eventSystem.sendNavigationEvents = true;
+        }
+
+        private void ConfigureEventSystemInput(InputSystemUIInputModule inputModule)
+        {
+            if (inputModule == null)
             {
-                inputModule.AssignDefaultActions();
+                return;
             }
 
-            inputModule.deselectOnBackgroundClick = true;
-            eventSystem.sendNavigationEvents = true;
+            if (runtimeUiActionsAsset == null)
+            {
+                runtimeUiActionsAsset = BuildRuntimeUiActionsAsset();
+            }
+
+            InputActionMap uiMap = runtimeUiActionsAsset.FindActionMap("RuntimeUI", throwIfNotFound: true);
+
+            inputModule.actionsAsset = runtimeUiActionsAsset;
+            inputModule.point = InputActionReference.Create(uiMap.FindAction("Point", throwIfNotFound: true));
+            inputModule.leftClick = InputActionReference.Create(uiMap.FindAction("LeftClick", throwIfNotFound: true));
+            inputModule.middleClick = InputActionReference.Create(uiMap.FindAction("MiddleClick", throwIfNotFound: true));
+            inputModule.rightClick = InputActionReference.Create(uiMap.FindAction("RightClick", throwIfNotFound: true));
+            inputModule.scrollWheel = InputActionReference.Create(uiMap.FindAction("ScrollWheel", throwIfNotFound: true));
+            inputModule.move = InputActionReference.Create(uiMap.FindAction("Move", throwIfNotFound: true));
+            inputModule.submit = InputActionReference.Create(uiMap.FindAction("Submit", throwIfNotFound: true));
+            inputModule.cancel = InputActionReference.Create(uiMap.FindAction("Cancel", throwIfNotFound: true));
+            inputModule.trackedDevicePosition = InputActionReference.Create(
+                uiMap.FindAction("TrackedDevicePosition", throwIfNotFound: true)
+            );
+            inputModule.trackedDeviceOrientation = InputActionReference.Create(
+                uiMap.FindAction("TrackedDeviceOrientation", throwIfNotFound: true)
+            );
+
+            runtimeUiActionsAsset.Enable();
+        }
+
+        private static InputActionAsset BuildRuntimeUiActionsAsset()
+        {
+            InputActionAsset asset = ScriptableObject.CreateInstance<InputActionAsset>();
+            asset.name = "RuntimeSelectionUiActions";
+
+            InputActionMap map = new InputActionMap("RuntimeUI");
+
+            InputAction pointAction = map.AddAction(
+                "Point",
+                InputActionType.PassThrough
+            );
+            pointAction.expectedControlType = "Vector2";
+            pointAction.AddBinding("<Mouse>/position");
+
+            InputAction leftClickAction = map.AddAction(
+                "LeftClick",
+                InputActionType.PassThrough
+            );
+            leftClickAction.expectedControlType = "Button";
+            leftClickAction.AddBinding("<Mouse>/leftButton");
+            leftClickAction.AddBinding("<XRController>/triggerPressed");
+            leftClickAction.AddBinding("<XRController>{LeftHand}/triggerPressed");
+            leftClickAction.AddBinding("<XRController>{RightHand}/triggerPressed");
+
+            InputAction middleClickAction = map.AddAction(
+                "MiddleClick",
+                InputActionType.PassThrough
+            );
+            middleClickAction.expectedControlType = "Button";
+            middleClickAction.AddBinding("<Mouse>/middleButton");
+
+            InputAction rightClickAction = map.AddAction(
+                "RightClick",
+                InputActionType.PassThrough
+            );
+            rightClickAction.expectedControlType = "Button";
+            rightClickAction.AddBinding("<Mouse>/rightButton");
+
+            InputAction scrollWheelAction = map.AddAction(
+                "ScrollWheel",
+                InputActionType.PassThrough
+            );
+            scrollWheelAction.expectedControlType = "Vector2";
+            scrollWheelAction.AddBinding("<Mouse>/scroll");
+
+            InputAction moveAction = map.AddAction(
+                "Move",
+                InputActionType.PassThrough
+            );
+            moveAction.expectedControlType = "Vector2";
+            AddMoveBindings(moveAction);
+
+            InputAction submitAction = map.AddAction(
+                "Submit",
+                InputActionType.Button
+            );
+            submitAction.expectedControlType = "Button";
+            submitAction.AddBinding("<Keyboard>/enter");
+            submitAction.AddBinding("<Keyboard>/numpadEnter");
+            submitAction.AddBinding("<Gamepad>/buttonSouth");
+
+            InputAction cancelAction = map.AddAction(
+                "Cancel",
+                InputActionType.Button
+            );
+            cancelAction.expectedControlType = "Button";
+            cancelAction.AddBinding("<Keyboard>/escape");
+            cancelAction.AddBinding("<Gamepad>/buttonEast");
+
+            InputAction trackedDevicePositionAction = map.AddAction(
+                "TrackedDevicePosition",
+                InputActionType.PassThrough
+            );
+            trackedDevicePositionAction.expectedControlType = "Vector3";
+            trackedDevicePositionAction.AddBinding("<XRController>/pointerPosition");
+            trackedDevicePositionAction.AddBinding("<XRController>{LeftHand}/pointerPosition");
+            trackedDevicePositionAction.AddBinding("<XRController>{RightHand}/pointerPosition");
+            trackedDevicePositionAction.AddBinding("<TrackedDevice>/devicePosition");
+
+            InputAction trackedDeviceOrientationAction = map.AddAction(
+                "TrackedDeviceOrientation",
+                InputActionType.PassThrough
+            );
+            trackedDeviceOrientationAction.expectedControlType = "Quaternion";
+            trackedDeviceOrientationAction.AddBinding("<XRController>/pointerRotation");
+            trackedDeviceOrientationAction.AddBinding("<XRController>{LeftHand}/pointerRotation");
+            trackedDeviceOrientationAction.AddBinding("<XRController>{RightHand}/pointerRotation");
+            trackedDeviceOrientationAction.AddBinding("<TrackedDevice>/deviceRotation");
+
+            asset.AddActionMap(map);
+            return asset;
+        }
+
+        private static void AddMoveBindings(InputAction moveAction)
+        {
+            if (moveAction == null)
+            {
+                return;
+            }
+
+            moveAction.AddCompositeBinding("2DVector")
+                .With("Up", "<Keyboard>/w")
+                .With("Up", "<Keyboard>/upArrow")
+                .With("Down", "<Keyboard>/s")
+                .With("Down", "<Keyboard>/downArrow")
+                .With("Left", "<Keyboard>/a")
+                .With("Left", "<Keyboard>/leftArrow")
+                .With("Right", "<Keyboard>/d")
+                .With("Right", "<Keyboard>/rightArrow");
+
+            moveAction.AddCompositeBinding("2DVector")
+                .With("Up", "<Gamepad>/leftStick/up")
+                .With("Down", "<Gamepad>/leftStick/down")
+                .With("Left", "<Gamepad>/leftStick/left")
+                .With("Right", "<Gamepad>/leftStick/right");
+
+            moveAction.AddCompositeBinding("2DVector")
+                .With("Up", "<Gamepad>/dpad/up")
+                .With("Down", "<Gamepad>/dpad/down")
+                .With("Left", "<Gamepad>/dpad/left")
+                .With("Right", "<Gamepad>/dpad/right");
+        }
+
+        private bool TryUseSceneUi()
+        {
+            if (!preferSceneUi || sceneCanvas == null || sceneListContentRoot == null)
+            {
+                return false;
+            }
+
+            rootCanvas = sceneCanvas;
+            listContentRoot = sceneListContentRoot;
+            statusText = sceneStatusText;
+            sourceSummaryText = sceneSourceSummaryText;
+
+            GraphicRaycaster graphicRaycaster = sceneCanvas.GetComponent<GraphicRaycaster>();
+            if (graphicRaycaster == null)
+            {
+                graphicRaycaster = sceneCanvas.gameObject.AddComponent<GraphicRaycaster>();
+            }
+
+            graphicRaycaster.ignoreReversedGraphics = true;
+
+            if (sceneCanvas.renderMode == RenderMode.WorldSpace)
+            {
+                if (sceneCanvas.worldCamera == null)
+                {
+                    sceneCanvas.worldCamera = presentationCamera;
+                }
+
+                if (sceneCanvas.GetComponent<TrackedDeviceRaycaster>() == null)
+                {
+                    sceneCanvas.gameObject.AddComponent<TrackedDeviceRaycaster>();
+                }
+            }
+
+            if (sceneStimulusButtonTemplate != null)
+            {
+                sceneStimulusButtonTemplate.gameObject.SetActive(false);
+            }
+
+            if (sceneRefreshButton != null)
+            {
+                sceneRefreshButton.onClick.RemoveListener(PopulateStimulusList);
+                sceneRefreshButton.onClick.AddListener(PopulateStimulusList);
+            }
+
+            return true;
+        }
+
+        private void ResolveSceneUiReferences()
+        {
+            if (sceneCanvas == null)
+            {
+                GameObject sceneCanvasObject = GameObject.Find("ExperimentSelectionCanvas");
+                if (sceneCanvasObject != null)
+                {
+                    sceneCanvas = sceneCanvasObject.GetComponent<Canvas>();
+                }
+            }
         }
 
         private static void PreparePointerForSelection()
@@ -114,15 +354,28 @@ namespace AOI360.Runtime.Experiment
 
         private void BuildRuntimeUi()
         {
-            GameObject canvasObject = new GameObject(
-                "ExperimentSelectionCanvas",
-                typeof(Canvas),
-                typeof(CanvasScaler),
-                typeof(GraphicRaycaster)
-            );
-            dynamicUiObjects.Add(canvasObject);
+            GameObject canvasObject;
+            bool preserveSceneWorldPlacement = sceneCanvas != null && sceneCanvas.renderMode == RenderMode.WorldSpace;
 
-            rootCanvas = canvasObject.GetComponent<Canvas>();
+            if (sceneCanvas != null)
+            {
+                canvasObject = sceneCanvas.gameObject;
+                rootCanvas = sceneCanvas;
+                EnsureCanvasSupportComponents(canvasObject);
+            }
+            else
+            {
+                canvasObject = new GameObject(
+                    "ExperimentSelectionCanvas",
+                    typeof(Canvas),
+                    typeof(CanvasScaler),
+                    typeof(GraphicRaycaster)
+                );
+
+                dynamicUiObjects.Add(canvasObject);
+                rootCanvas = canvasObject.GetComponent<Canvas>();
+            }
+
             rootCanvas.sortingOrder = 1000;
 
             CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
@@ -131,7 +384,20 @@ namespace AOI360.Runtime.Experiment
             scaler.matchWidthOrHeight = 0.5f;
 
             RectTransform canvasRect = canvasObject.GetComponent<RectTransform>();
-            ConfigurePresentationCanvas(canvasObject, canvasRect);
+            if (preserveSceneWorldPlacement)
+            {
+                rootCanvas.renderMode = RenderMode.WorldSpace;
+                rootCanvas.worldCamera = presentationCamera;
+
+                if (canvasObject.GetComponent<TrackedDeviceRaycaster>() == null)
+                {
+                    canvasObject.AddComponent<TrackedDeviceRaycaster>();
+                }
+            }
+            else
+            {
+                ConfigurePresentationCanvas(canvasObject, canvasRect);
+            }
 
             RectTransform background = ExperimentRuntimeUi.CreateUiObject(
                 "Background",
@@ -139,7 +405,11 @@ namespace AOI360.Runtime.Experiment
                 new Vector2(0f, 0f),
                 new Vector2(1f, 1f)
             );
-            Image backgroundImage = ExperimentRuntimeUi.AddPanelImage(background, new Color(0.06f, 0.07f, 0.1f, 0.96f));
+
+            Image backgroundImage = ExperimentRuntimeUi.AddPanelImage(
+                background,
+                new Color(0.06f, 0.07f, 0.1f, 0.96f)
+            );
             backgroundImage.raycastTarget = false;
 
             RectTransform modal = ExperimentRuntimeUi.CreateUiObject(
@@ -148,9 +418,14 @@ namespace AOI360.Runtime.Experiment
                 new Vector2(0.5f, 0.5f),
                 new Vector2(0.5f, 0.5f)
             );
+
             modal.sizeDelta = new Vector2(1080f, 760f);
             modal.anchoredPosition = Vector2.zero;
-            Image modalImage = ExperimentRuntimeUi.AddPanelImage(modal, new Color(0.13f, 0.15f, 0.2f, 0.98f));
+
+            Image modalImage = ExperimentRuntimeUi.AddPanelImage(
+                modal,
+                new Color(0.13f, 0.15f, 0.2f, 0.98f)
+            );
             modalImage.raycastTarget = false;
 
             Outline outline = modal.gameObject.AddComponent<Outline>();
@@ -160,12 +435,13 @@ namespace AOI360.Runtime.Experiment
             TextMeshProUGUI titleText = ExperimentRuntimeUi.CreateText(
                 "Title",
                 modal,
-                "Selecciona el vídeo del experimento",
+                "Selecciona el video del experimento",
                 40f,
                 FontStyles.Bold,
                 TextAlignmentOptions.MidlineLeft,
                 Color.white
             );
+
             RectTransform titleRect = titleText.rectTransform;
             titleRect.anchorMin = new Vector2(0f, 1f);
             titleRect.anchorMax = new Vector2(1f, 1f);
@@ -177,12 +453,13 @@ namespace AOI360.Runtime.Experiment
             TextMeshProUGUI subtitleText = ExperimentRuntimeUi.CreateText(
                 "Subtitle",
                 modal,
-                "Se muestran solo los estímulos que tienen vídeo y AOIs listos. El catálogo prioriza `data/` y usa `StreamingAssets` como respaldo.",
+                "Se muestran solo los estimulos que tienen video y AOIs listos. El catalogo prioriza `data/` y usa `StreamingAssets` como respaldo.",
                 22f,
                 FontStyles.Normal,
                 TextAlignmentOptions.TopLeft,
                 new Color(0.82f, 0.87f, 0.96f, 0.92f)
             );
+
             RectTransform subtitleRect = subtitleText.rectTransform;
             subtitleRect.anchorMin = new Vector2(0f, 1f);
             subtitleRect.anchorMax = new Vector2(1f, 1f);
@@ -197,9 +474,14 @@ namespace AOI360.Runtime.Experiment
                 new Vector2(0f, 0f),
                 new Vector2(1f, 1f)
             );
+
             listPanel.offsetMin = new Vector2(36f, 110f);
             listPanel.offsetMax = new Vector2(-36f, -188f);
-            Image listPanelImage = ExperimentRuntimeUi.AddPanelImage(listPanel, new Color(0.08f, 0.09f, 0.13f, 0.98f));
+
+            Image listPanelImage = ExperimentRuntimeUi.AddPanelImage(
+                listPanel,
+                new Color(0.08f, 0.09f, 0.13f, 0.98f)
+            );
             listPanelImage.raycastTarget = false;
 
             ScrollRect scrollRect = listPanel.gameObject.AddComponent<ScrollRect>();
@@ -213,10 +495,16 @@ namespace AOI360.Runtime.Experiment
                 new Vector2(0f, 0f),
                 new Vector2(1f, 1f)
             );
+
             viewport.offsetMin = new Vector2(16f, 16f);
             viewport.offsetMax = new Vector2(-16f, -16f);
-            Image viewportImage = ExperimentRuntimeUi.AddPanelImage(viewport, new Color(0f, 0f, 0f, 0f));
+
+            Image viewportImage = ExperimentRuntimeUi.AddPanelImage(
+                viewport,
+                new Color(0f, 0f, 0f, 0f)
+            );
             viewportImage.raycastTarget = false;
+
             Mask viewportMask = viewport.gameObject.AddComponent<Mask>();
             viewportMask.showMaskGraphic = false;
 
@@ -226,13 +514,15 @@ namespace AOI360.Runtime.Experiment
                 new Vector2(0f, 1f),
                 new Vector2(1f, 1f)
             );
+
             listContentRoot.pivot = new Vector2(0.5f, 1f);
             listContentRoot.anchoredPosition = Vector2.zero;
-            listContentRoot.sizeDelta = new Vector2(0f, 0f);
+            listContentRoot.sizeDelta = Vector2.zero;
 
             VerticalLayoutGroup layoutGroup = listContentRoot.gameObject.AddComponent<VerticalLayoutGroup>();
             layoutGroup.padding = new RectOffset(0, 0, 0, 0);
             layoutGroup.spacing = 14f;
+            layoutGroup.childAlignment = TextAnchor.UpperCenter;
             layoutGroup.childControlWidth = true;
             layoutGroup.childControlHeight = true;
             layoutGroup.childForceExpandWidth = true;
@@ -255,6 +545,7 @@ namespace AOI360.Runtime.Experiment
                 TextAlignmentOptions.BottomLeft,
                 new Color(0.78f, 0.84f, 0.93f, 0.95f)
             );
+
             RectTransform sourceSummaryRect = sourceSummaryText.rectTransform;
             sourceSummaryRect.anchorMin = new Vector2(0f, 0f);
             sourceSummaryRect.anchorMax = new Vector2(1f, 0f);
@@ -266,12 +557,13 @@ namespace AOI360.Runtime.Experiment
             statusText = ExperimentRuntimeUi.CreateText(
                 "Status",
                 modal,
-                "Esperando selección…",
+                "Esperando seleccion...",
                 22f,
                 FontStyles.Bold,
                 TextAlignmentOptions.BottomLeft,
                 new Color(0.96f, 0.82f, 0.48f, 1f)
             );
+
             RectTransform statusRect = statusText.rectTransform;
             statusRect.anchorMin = new Vector2(0f, 0f);
             statusRect.anchorMax = new Vector2(1f, 0f);
@@ -285,6 +577,7 @@ namespace AOI360.Runtime.Experiment
                 modal,
                 new Color(0.2f, 0.34f, 0.54f, 0.96f)
             );
+
             RectTransform refreshRect = refreshButton.GetComponent<RectTransform>();
             refreshRect.anchorMin = new Vector2(1f, 0f);
             refreshRect.anchorMax = new Vector2(1f, 0f);
@@ -301,8 +594,32 @@ namespace AOI360.Runtime.Experiment
                 TextAlignmentOptions.Center,
                 Color.white
             );
+
             refreshLabel.raycastTarget = false;
             refreshButton.onClick.AddListener(PopulateStimulusList);
+        }
+
+        private static void EnsureCanvasSupportComponents(GameObject canvasObject)
+        {
+            if (canvasObject == null)
+            {
+                return;
+            }
+
+            if (canvasObject.GetComponent<Canvas>() == null)
+            {
+                canvasObject.AddComponent<Canvas>();
+            }
+
+            if (canvasObject.GetComponent<CanvasScaler>() == null)
+            {
+                canvasObject.AddComponent<CanvasScaler>();
+            }
+
+            if (canvasObject.GetComponent<GraphicRaycaster>() == null)
+            {
+                canvasObject.AddComponent<GraphicRaycaster>();
+            }
         }
 
         private void ConfigurePresentationCanvas(GameObject canvasObject, RectTransform canvasRect)
@@ -324,13 +641,17 @@ namespace AOI360.Runtime.Experiment
                 canvasObject.AddComponent<TrackedDeviceRaycaster>();
             }
 
-            canvasRect.SetParent(presentationCamera.transform, false);
+            Transform cameraTransform = presentationCamera.transform;
+            Vector3 anchoredPosition = cameraTransform.position
+                                       + (cameraTransform.forward * 2.45f)
+                                       + (cameraTransform.up * 0.24f);
+
             canvasRect.anchorMin = new Vector2(0.5f, 0.5f);
             canvasRect.anchorMax = new Vector2(0.5f, 0.5f);
             canvasRect.pivot = new Vector2(0.5f, 0.5f);
             canvasRect.sizeDelta = new Vector2(1600f, 900f);
-            canvasRect.localPosition = new Vector3(0f, -0.04f, 2.35f);
-            canvasRect.localRotation = Quaternion.identity;
+            canvasRect.position = anchoredPosition;
+            canvasRect.rotation = cameraTransform.rotation;
             canvasRect.localScale = Vector3.one * 0.00145f;
         }
 
@@ -365,22 +686,23 @@ namespace AOI360.Runtime.Experiment
             trackedPoseDriver.trackingType = TrackedPoseDriver.TrackingType.RotationAndPosition;
             trackedPoseDriver.updateType = TrackedPoseDriver.UpdateType.UpdateAndBeforeRender;
             trackedPoseDriver.ignoreTrackingState = true;
-            trackedPoseDriver.positionInput = new InputActionProperty(
-                new InputAction(
-                    name: "SelectionHmdPosition",
-                    type: InputActionType.PassThrough,
-                    binding: "<XRHMD>/centerEyePosition",
-                    expectedControlType: "Vector3"
-                )
+
+            InputAction positionAction = new InputAction(
+                name: "SelectionHmdPosition",
+                type: InputActionType.PassThrough,
+                binding: "<XRHMD>/centerEyePosition"
             );
-            trackedPoseDriver.rotationInput = new InputActionProperty(
-                new InputAction(
-                    name: "SelectionHmdRotation",
-                    type: InputActionType.PassThrough,
-                    binding: "<XRHMD>/centerEyeRotation",
-                    expectedControlType: "Quaternion"
-                )
+            positionAction.expectedControlType = "Vector3";
+
+            InputAction rotationAction = new InputAction(
+                name: "SelectionHmdRotation",
+                type: InputActionType.PassThrough,
+                binding: "<XRHMD>/centerEyeRotation"
             );
+            rotationAction.expectedControlType = "Quaternion";
+
+            trackedPoseDriver.positionInput = new InputActionProperty(positionAction);
+            trackedPoseDriver.rotationInput = new InputActionProperty(rotationAction);
         }
 
         private void PopulateStimulusList()
@@ -392,16 +714,24 @@ namespace AOI360.Runtime.Experiment
 
             for (int i = listContentRoot.childCount - 1; i >= 0; i--)
             {
-                Destroy(listContentRoot.GetChild(i).gameObject);
+                Transform child = listContentRoot.GetChild(i);
+                if (sceneStimulusButtonTemplate != null && child == sceneStimulusButtonTemplate.transform)
+                {
+                    continue;
+                }
+
+                Destroy(child.gameObject);
             }
 
             IReadOnlyList<ExperimentStimulusDefinition> stimuli = ExperimentStimulusCatalog.DiscoverAvailableStimuli();
+
             int repositoryCount = 0;
             int streamingCount = 0;
 
             for (int i = 0; i < stimuli.Count; i++)
             {
                 ExperimentStimulusDefinition stimulus = stimuli[i];
+
                 if (stimulus.SourceKind == ExperimentStimulusSourceKind.RepositoryData)
                 {
                     repositoryCount++;
@@ -417,15 +747,15 @@ namespace AOI360.Runtime.Experiment
             if (sourceSummaryText != null)
             {
                 sourceSummaryText.text = stimuli.Count > 0
-                    ? $"Estímulos disponibles: {stimuli.Count} | repo: {repositoryCount} | mirror: {streamingCount}"
-                    : "No se ha encontrado ningún estímulo listo.";
+                    ? $"Estimulos disponibles: {stimuli.Count} | repo: {repositoryCount} | mirror: {streamingCount}"
+                    : "No se ha encontrado ningun estimulo listo.";
             }
 
             if (statusText != null)
             {
                 statusText.text = stimuli.Count > 0
-                    ? "Selecciona un vídeo para abrir la escena VR y lanzar la cuenta atrás."
-                    : "No hay vídeos listos. Revisa `data/input_videos` y `data/processed`, o sincroniza `StreamingAssets`.";
+                    ? "Selecciona un video para abrir la escena VR y lanzar la cuenta atras."
+                    : "No hay videos listos. Revisa `data/input_videos` y `data/processed`, o sincroniza `StreamingAssets`.";
             }
 
             if (stimuli.Count == 0)
@@ -436,84 +766,226 @@ namespace AOI360.Runtime.Experiment
                     new Vector2(0f, 0f),
                     new Vector2(1f, 0f)
                 );
+
                 emptyState.anchorMin = new Vector2(0f, 1f);
                 emptyState.anchorMax = new Vector2(1f, 1f);
                 emptyState.pivot = new Vector2(0.5f, 1f);
                 emptyState.sizeDelta = new Vector2(0f, 180f);
+
                 LayoutElement emptyLayout = emptyState.gameObject.AddComponent<LayoutElement>();
                 emptyLayout.preferredHeight = 180f;
-                ExperimentRuntimeUi.AddPanelImage(emptyState, new Color(0.16f, 0.11f, 0.11f, 0.95f));
+
+                ExperimentRuntimeUi.AddPanelImage(
+                    emptyState,
+                    new Color(0.16f, 0.11f, 0.11f, 0.95f)
+                );
 
                 TextMeshProUGUI emptyText = ExperimentRuntimeUi.CreateText(
                     "EmptyLabel",
                     emptyState,
-                    "No hay nada seleccionable todavía.\n\nGenera un vídeo preprocesado con la pipeline y, si vas a usar build o `StreamingAssets`, ejecuta la sincronización desde `Tools/AOI`.",
+                    "No hay nada seleccionable todavia.\n\nGenera un video preprocesado con la pipeline y, si vas a usar build o `StreamingAssets`, ejecuta la sincronizacion desde `Tools/AOI`.",
                     22f,
                     FontStyles.Normal,
                     TextAlignmentOptions.Center,
                     new Color(1f, 0.9f, 0.86f, 1f)
                 );
+
                 emptyText.raycastTarget = false;
             }
 
             Canvas.ForceUpdateCanvases();
             LayoutRebuilder.ForceRebuildLayoutImmediate(listContentRoot);
+
+            RectTransform parentRect = listContentRoot.parent as RectTransform;
+            if (parentRect != null)
+            {
+                LayoutRebuilder.ForceRebuildLayoutImmediate(parentRect);
+            }
         }
 
         private void CreateStimulusButton(ExperimentStimulusDefinition stimulus)
         {
-            Button button = ExperimentRuntimeUi.CreateButton(
-                $"StimulusButton_{stimulus.SequenceName}",
-                listContentRoot,
-                new Color(0.16f, 0.2f, 0.28f, 0.98f)
-            );
+            Button button = CreateStimulusButtonInstance(stimulus);
+            if (button == null)
+            {
+                return;
+            }
+
+            button.onClick.RemoveAllListeners();
+            button.onClick.AddListener(() => SelectStimulus(stimulus));
+
+            if (sceneStimulusButtonTemplate != null)
+            {
+                ApplyTemplateButtonText(button, stimulus);
+                return;
+            }
+
             RectTransform buttonRect = button.GetComponent<RectTransform>();
             buttonRect.anchorMin = new Vector2(0f, 1f);
             buttonRect.anchorMax = new Vector2(1f, 1f);
             buttonRect.pivot = new Vector2(0.5f, 1f);
-            buttonRect.sizeDelta = new Vector2(0f, 94f);
+            buttonRect.sizeDelta = new Vector2(0f, 104f);
 
             LayoutElement layoutElement = button.gameObject.AddComponent<LayoutElement>();
-            layoutElement.preferredHeight = 94f;
-            layoutElement.minHeight = 94f;
+            layoutElement.preferredHeight = 104f;
+            layoutElement.minHeight = 104f;
 
-            VerticalLayoutGroup layoutGroup = button.gameObject.AddComponent<VerticalLayoutGroup>();
-            layoutGroup.padding = new RectOffset(24, 24, 16, 16);
-            layoutGroup.spacing = 4f;
-            layoutGroup.childControlWidth = true;
-            layoutGroup.childControlHeight = false;
-            layoutGroup.childForceExpandWidth = true;
-            layoutGroup.childForceExpandHeight = false;
+            Outline outline = button.gameObject.AddComponent<Outline>();
+            outline.effectColor = new Color(0.44f, 0.58f, 0.79f, 0.2f);
+            outline.effectDistance = new Vector2(1f, -1f);
 
-            TextMeshProUGUI title = ExperimentRuntimeUi.CreateText(
-                "Title",
+            TextMeshProUGUI title = CreateButtonText(
                 button.transform,
+                "Title",
                 stimulus.DisplayName,
                 28f,
                 FontStyles.Bold,
                 TextAlignmentOptions.Left,
-                Color.white
+                Color.white,
+                new Vector2(0f, 1f),
+                new Vector2(1f, 1f),
+                new Vector2(0.5f, 1f),
+                new Vector2(0f, 38f),
+                new Vector2(0f, -10f),
+                new Vector4(24f, 8f, 24f, 0f),
+                false
             );
+
             title.raycastTarget = false;
-            LayoutElement titleLayout = title.gameObject.AddComponent<LayoutElement>();
-            titleLayout.preferredHeight = 34f;
+            title.overflowMode = TextOverflowModes.Ellipsis;
 
             string detailText =
                 $"{stimulus.VideoFileName} | secuencia: {stimulus.SequenceName} | origen: {stimulus.SourceLabel}";
-            TextMeshProUGUI details = ExperimentRuntimeUi.CreateText(
-                "Details",
+
+            TextMeshProUGUI details = CreateButtonText(
                 button.transform,
+                "Details",
                 detailText,
                 18f,
                 FontStyles.Normal,
                 TextAlignmentOptions.Left,
-                new Color(0.82f, 0.88f, 0.96f, 0.96f)
+                new Color(0.82f, 0.88f, 0.96f, 0.96f),
+                new Vector2(0f, 1f),
+                new Vector2(1f, 1f),
+                new Vector2(0.5f, 1f),
+                new Vector2(0f, 34f),
+                new Vector2(0f, -48f),
+                new Vector4(24f, 4f, 24f, 8f),
+                false
             );
-            details.raycastTarget = false;
-            LayoutElement detailsLayout = details.gameObject.AddComponent<LayoutElement>();
-            detailsLayout.preferredHeight = 24f;
 
-            button.onClick.AddListener(() => SelectStimulus(stimulus));
+            details.raycastTarget = false;
+            details.overflowMode = TextOverflowModes.Ellipsis;
+        }
+
+        private Button CreateStimulusButtonInstance(ExperimentStimulusDefinition stimulus)
+        {
+            if (sceneStimulusButtonTemplate != null)
+            {
+                Button buttonInstance = Instantiate(sceneStimulusButtonTemplate, listContentRoot);
+                buttonInstance.name = $"StimulusButton_{stimulus.SequenceName}";
+                buttonInstance.gameObject.SetActive(true);
+                return buttonInstance;
+            }
+
+            return ExperimentRuntimeUi.CreateButton(
+                $"StimulusButton_{stimulus.SequenceName}",
+                listContentRoot,
+                new Color(0.16f, 0.2f, 0.28f, 0.98f)
+            );
+        }
+
+        private void ApplyTemplateButtonText(Button button, ExperimentStimulusDefinition stimulus)
+        {
+            string detailText =
+                $"{stimulus.VideoFileName} | secuencia: {stimulus.SequenceName} | origen: {stimulus.SourceLabel}";
+
+            TextMeshProUGUI title = FindNamedText(button.transform, "Title");
+            TextMeshProUGUI details = FindNamedText(button.transform, "Details");
+
+            TextMeshProUGUI[] allTexts = button.GetComponentsInChildren<TextMeshProUGUI>(true);
+
+            if (title == null && allTexts.Length > 0)
+            {
+                title = allTexts[0];
+            }
+
+            if (details == null && allTexts.Length > 1)
+            {
+                details = allTexts[1];
+            }
+
+            if (title != null)
+            {
+                title.text = stimulus.DisplayName;
+                title.raycastTarget = false;
+            }
+
+            if (details != null)
+            {
+                details.text = detailText;
+                details.raycastTarget = false;
+            }
+        }
+
+        private static TextMeshProUGUI FindNamedText(Transform root, string childName)
+        {
+            if (root == null || string.IsNullOrWhiteSpace(childName))
+            {
+                return null;
+            }
+
+            TextMeshProUGUI[] allTexts = root.GetComponentsInChildren<TextMeshProUGUI>(true);
+            for (int i = 0; i < allTexts.Length; i++)
+            {
+                TextMeshProUGUI text = allTexts[i];
+                if (text != null && string.Equals(text.name, childName, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    return text;
+                }
+            }
+
+            return null;
+        }
+
+        private static TextMeshProUGUI CreateButtonText(
+            Transform parent,
+            string name,
+            string text,
+            float fontSize,
+            FontStyles fontStyle,
+            TextAlignmentOptions alignment,
+            Color color,
+            Vector2 anchorMin,
+            Vector2 anchorMax,
+            Vector2 pivot,
+            Vector2 sizeDelta,
+            Vector2 anchoredPosition,
+            Vector4 margin,
+            bool wrapText
+        )
+        {
+            TextMeshProUGUI textComponent = ExperimentRuntimeUi.CreateText(
+                name,
+                parent,
+                text,
+                fontSize,
+                fontStyle,
+                alignment,
+                color
+            );
+
+            RectTransform rectTransform = textComponent.rectTransform;
+            rectTransform.anchorMin = anchorMin;
+            rectTransform.anchorMax = anchorMax;
+            rectTransform.pivot = pivot;
+            rectTransform.sizeDelta = sizeDelta;
+            rectTransform.anchoredPosition = anchoredPosition;
+
+            textComponent.margin = margin;
+            textComponent.enableWordWrapping = wrapText;
+
+            return textComponent;
         }
 
         private void SelectStimulus(ExperimentStimulusDefinition stimulus)
@@ -531,7 +1003,34 @@ namespace AOI360.Runtime.Experiment
                 statusText.text = $"Abriendo experimento para: {stimulus.DisplayName}";
             }
 
-            SceneManager.LoadScene(PlaybackSceneName);
+            SceneManager.LoadScene(ResolvePlaybackSceneName());
+        }
+
+        private static bool IsSelectionScene(string sceneName)
+        {
+            for (int i = 0; i < TargetSceneNames.Length; i++)
+            {
+                if (string.Equals(sceneName, TargetSceneNames[i], System.StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string ResolvePlaybackSceneName()
+        {
+            for (int i = 0; i < PlaybackSceneCandidates.Length; i++)
+            {
+                string candidate = PlaybackSceneCandidates[i];
+                if (Application.CanStreamedLevelBeLoaded(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return PlaybackSceneCandidates[0];
         }
     }
 }
