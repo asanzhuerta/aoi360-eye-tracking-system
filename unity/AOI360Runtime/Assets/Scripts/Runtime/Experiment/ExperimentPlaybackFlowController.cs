@@ -89,18 +89,40 @@ namespace AOI360.Runtime.Experiment
                 yield return null;
             }
 
-            while (!videoPlayback.IsPrepared || (aoiSequenceRuntimeLoader != null && !aoiSequenceRuntimeLoader.IsSequenceLoaded))
+            float loadingStartedAt = Time.realtimeSinceStartup;
+            float maxAoiWaitSeconds = 3f;
+
+            while (!videoPlayback.IsPrepared)
             {
                 ResolveReferences();
-
-                string loadingText = videoPlayback.IsPrepared
-                    ? "Vídeo listo, esperando AOIs"
-                    : "Preparando vídeo";
 
                 SetOverlayState(
                     title: "Preparando experimento",
                     countdown: "…",
-                    subtitle: $"{loadingText}: {stimulus.DisplayName}"
+                    subtitle: $"Preparando vídeo: {stimulus.DisplayName}"
+                );
+
+                yield return null;
+            }
+
+            while (aoiSequenceRuntimeLoader != null && !aoiSequenceRuntimeLoader.IsSequenceLoaded)
+            {
+                ResolveReferences();
+
+                float elapsed = Time.realtimeSinceStartup - loadingStartedAt;
+                if (elapsed >= maxAoiWaitSeconds)
+                {
+                    Debug.LogWarning(
+                        $"[ExperimentPlaybackFlowController] AOI sequence not ready after {maxAoiWaitSeconds:0.0}s. " +
+                        "Starting video anyway so playback is not blocked."
+                    );
+                    break;
+                }
+
+                SetOverlayState(
+                    title: "Preparando experimento",
+                    countdown: "…",
+                    subtitle: $"Vídeo listo, esperando AOIs: {stimulus.DisplayName}"
                 );
 
                 yield return null;
@@ -121,6 +143,8 @@ namespace AOI360.Runtime.Experiment
             }
 
             ExperimentSessionState.UnlockPlaybackStart();
+
+            Debug.Log("[ExperimentPlaybackFlowController] Countdown finished. Starting video playback.");
             videoPlayback.PlayVideo();
 
             if (dataRecorder != null && !dataRecorder.IsRecording)
