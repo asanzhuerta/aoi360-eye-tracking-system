@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using AOI360.Runtime.Experiment;
 using UnityEditor;
 using UnityEngine;
 
@@ -11,8 +12,14 @@ public static class SyncGeneratedAoiSequences
     public static void SyncAllGeneratedSequences()
     {
         string repoRoot = ResolveRepoRoot();
+        string sourceVideosRoot = Path.Combine(repoRoot, "data", "input_videos");
         string sourceMetadataRoot = Path.Combine(repoRoot, "data", "processed", "metadata");
         string sourceMapsRoot = Path.Combine(repoRoot, "data", "processed", "id_maps");
+        string streamingVideosRoot = Path.Combine(
+            Application.dataPath,
+            "StreamingAssets",
+            "Videos"
+        );
         string streamingSequencesRoot = Path.Combine(
             Application.dataPath,
             "StreamingAssets",
@@ -20,7 +27,7 @@ public static class SyncGeneratedAoiSequences
             "Sequences"
         );
 
-        if (!Directory.Exists(sourceMetadataRoot) || !Directory.Exists(sourceMapsRoot))
+        if (!Directory.Exists(sourceVideosRoot) || !Directory.Exists(sourceMetadataRoot) || !Directory.Exists(sourceMapsRoot))
         {
             Debug.LogWarning(
                 "[SyncGeneratedAoiSequences] The generated Python outputs were not found. " +
@@ -36,6 +43,7 @@ public static class SyncGeneratedAoiSequences
             return;
         }
 
+        Directory.CreateDirectory(streamingVideosRoot);
         int syncedCount = 0;
         for (int i = 0; i < manifestPaths.Length; i++)
         {
@@ -53,12 +61,32 @@ public static class SyncGeneratedAoiSequences
                 continue;
             }
 
+            string videoFileName = $"{sequenceName}.mp4";
+            if (ExperimentStimulusCatalog.TryReadVideoFileNameFromManifest(manifestPath, out string manifestVideoFileName))
+            {
+                videoFileName = manifestVideoFileName;
+            }
+
+            string sourceVideoPath = Path.Combine(sourceVideosRoot, videoFileName);
+            if (!File.Exists(sourceVideoPath))
+            {
+                Debug.LogWarning(
+                    $"[SyncGeneratedAoiSequences] Skipping '{sequenceName}' because the source video is missing: {sourceVideoPath}"
+                );
+                continue;
+            }
+
             string destinationSequenceRoot = Path.Combine(streamingSequencesRoot, sequenceName);
             string destinationMapsDirectory = Path.Combine(destinationSequenceRoot, "maps");
             string destinationKeyframesDirectory = Path.Combine(destinationSequenceRoot, "keyframes");
 
             PrepareDestinationDirectory(destinationMapsDirectory);
             PrepareDestinationDirectory(destinationKeyframesDirectory);
+            File.Copy(
+                sourceVideoPath,
+                Path.Combine(streamingVideosRoot, Path.GetFileName(sourceVideoPath)),
+                overwrite: true
+            );
 
             CopyMatchingFiles(sourceMapsDirectory, destinationMapsDirectory, "*_aoi_map.png");
             CopyMatchingFiles(sourceKeyframesDirectory, destinationKeyframesDirectory, "*_aoi_keyframe.json");

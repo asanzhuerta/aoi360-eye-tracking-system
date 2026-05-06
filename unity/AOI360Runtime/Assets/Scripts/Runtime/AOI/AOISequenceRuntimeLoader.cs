@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using AOI360.Runtime.Experiment;
 using AOI360.Runtime.Video;
 using AOI360.Runtime.Mapping;
 using UnityEngine;
@@ -107,6 +108,8 @@ namespace AOI360.Runtime.AOI
         private string resolvedSequenceFolder = "";
         private string resolvedManifestFileName = "";
         private string resolvedRuntimePackPath = "";
+        private string runtimeSelectedManifestPath = "";
+        private string runtimeSelectedMapsDirectoryPath = "";
         private bool metadataInjectedIntoLookup;
         private Texture2D runtimeAoiTexture;
         private Texture2D preloadedAoiTexture;
@@ -146,6 +149,7 @@ namespace AOI360.Runtime.AOI
             }
 
             ResolveReferences();
+            ApplySelectedStimulusOverride();
             TryLoadManifest();
         }
 
@@ -695,6 +699,13 @@ namespace AOI360.Runtime.AOI
 
         private bool TryResolveManifestPath(out string resolvedPath, out string resolvedBasePath)
         {
+            if (!string.IsNullOrWhiteSpace(runtimeSelectedManifestPath) && File.Exists(runtimeSelectedManifestPath))
+            {
+                resolvedPath = runtimeSelectedManifestPath;
+                resolvedBasePath = Path.GetDirectoryName(runtimeSelectedManifestPath) ?? "";
+                return true;
+            }
+
             string[] candidateRoots =
             {
                 sequenceRootFolder,
@@ -733,6 +744,11 @@ namespace AOI360.Runtime.AOI
 
         private string ResolveSequenceSubdirectory(string manifestDirectoryValue, params string[] preferredSubfolders)
         {
+            if (!string.IsNullOrWhiteSpace(runtimeSelectedMapsDirectoryPath) && Directory.Exists(runtimeSelectedMapsDirectoryPath))
+            {
+                return runtimeSelectedMapsDirectoryPath;
+            }
+
             for (int i = 0; i < preferredSubfolders.Length; i++)
             {
                 string preferredSubfolder = preferredSubfolders[i];
@@ -797,6 +813,28 @@ namespace AOI360.Runtime.AOI
             }
 
             return Path.Combine(baseDirectory ?? resolvedSequenceBasePath, fileName);
+        }
+
+        private void ApplySelectedStimulusOverride()
+        {
+            if (!ExperimentSessionState.HasSelectedStimulus)
+            {
+                return;
+            }
+
+            ExperimentStimulusDefinition stimulus = ExperimentSessionState.SelectedStimulus;
+            if (stimulus == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(stimulus.SequenceName))
+            {
+                sequenceFolderName = stimulus.SequenceName;
+            }
+
+            runtimeSelectedManifestPath = stimulus.ManifestAbsolutePath ?? "";
+            runtimeSelectedMapsDirectoryPath = stimulus.MapsDirectoryAbsolutePath ?? "";
         }
 
         private string ResolveSequenceFolderName()

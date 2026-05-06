@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using AOI360.Runtime.AOI;
+using AOI360.Runtime.Experiment;
 using AOI360.Runtime.Mapping;
 using AOI360.Runtime.Video;
 using EyeGaze.Runtime.Core;
@@ -39,6 +40,8 @@ namespace AOI360.Runtime.Logging
         private bool isRecording = false;
         private float sessionStartTime;
         private int lastExportedFixationSequence;
+
+        public bool IsRecording => isRecording;
 
         private void Start()
         {
@@ -94,7 +97,7 @@ namespace AOI360.Runtime.Logging
             string row = string.Join(",",
                 Escape(participantId),
                 Escape(sessionId),
-                Escape(videoId),
+                Escape(ResolveVideoId()),
                 timestampMs.ToString("F3", CultureInfo.InvariantCulture),
                 frameIndex.ToString(CultureInfo.InvariantCulture),
                 origin.x.ToString("F6", CultureInfo.InvariantCulture),
@@ -200,6 +203,11 @@ namespace AOI360.Runtime.Logging
                 return;
             }
 
+            if (ExperimentSessionState.IsPlaybackStartLocked)
+            {
+                return;
+            }
+
             StartRecording();
         }
 
@@ -218,6 +226,16 @@ namespace AOI360.Runtime.Logging
             }
 
             return sb.ToString();
+        }
+
+        private string ResolveVideoId()
+        {
+            if (videoPlayback != null && !string.IsNullOrWhiteSpace(videoPlayback.VideoStem))
+            {
+                return videoPlayback.VideoStem;
+            }
+
+            return videoId;
         }
 
         private string Escape(string value)

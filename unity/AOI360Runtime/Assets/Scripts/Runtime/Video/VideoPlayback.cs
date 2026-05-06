@@ -1,5 +1,6 @@
 using System.Collections;
 using System.IO;
+using AOI360.Runtime.Experiment;
 using UnityEngine;
 using UnityEngine.Video;
 
@@ -24,10 +25,14 @@ namespace AOI360.Runtime.Video
         [SerializeField] private bool allowFrameDrop = true;
 
         private VideoPlayer videoPlayer;
-        private bool isPrepared = false;
+        private bool isPrepared;
+        private string runtimeSelectedVideoPath = string.Empty;
+        private string activeVideoPath = string.Empty;
 
         public bool IsPrepared => isPrepared;
         public string VideoFileName => videoFileName;
+        public string VideoStem => Path.GetFileNameWithoutExtension(videoFileName);
+        public string ActiveVideoPath => activeVideoPath;
         public long CurrentFrame => videoPlayer != null ? videoPlayer.frame : -1;
         public double CurrentTime => videoPlayer != null ? videoPlayer.time : 0d;
         public bool IsPlaying => videoPlayer != null && videoPlayer.isPlaying;
@@ -41,14 +46,11 @@ namespace AOI360.Runtime.Video
                 videoPlayer = gameObject.AddComponent<VideoPlayer>();
             }
 
-            // Configuración base del reproductor de vídeo
             videoPlayer.playOnAwake = false;
             videoPlayer.isLooping = loop;
             videoPlayer.renderMode = VideoRenderMode.RenderTexture;
             videoPlayer.targetTexture = targetTexture;
             videoPlayer.audioOutputMode = VideoAudioOutputMode.None;
-
-            // Importante para fases posteriores: sincronización por frame mostrado
             videoPlayer.sendFrameReadyEvents = false;
             videoPlayer.skipOnDrop = allowFrameDrop;
             videoPlayer.waitForFirstFrame = true;
@@ -57,7 +59,6 @@ namespace AOI360.Runtime.Video
             videoPlayer.errorReceived += HandleErrorReceived;
             videoPlayer.loopPointReached += HandleLoopPointReached;
 
-            // Asignamos la textura al material del skybox
             if (skyboxMaterial != null && targetTexture != null)
             {
                 skyboxMaterial.SetTexture("_MainTex", targetTexture);
@@ -68,7 +69,10 @@ namespace AOI360.Runtime.Video
 
         private IEnumerator Start()
         {
-            string videoPath = Path.Combine(Application.streamingAssetsPath, "Videos", videoFileName);
+            ApplySelectedStimulusOverride();
+
+            string videoPath = ResolveVideoPath();
+            activeVideoPath = videoPath;
 
             if (!File.Exists(videoPath))
             {
@@ -86,13 +90,13 @@ namespace AOI360.Runtime.Video
 
             videoPlayer.Prepare();
 
-            // Espera simple hasta que el vídeo quede preparado
             while (!videoPlayer.isPrepared)
             {
                 yield return null;
             }
 
-            if (playOnStart)
+            bool shouldAutoPlay = playOnStart && !ExperimentSessionState.IsPlaybackStartLocked;
+            if (shouldAutoPlay)
             {
                 videoPlayer.Play();
 
@@ -136,6 +140,37 @@ namespace AOI360.Runtime.Video
             {
                 Debug.Log("[VideoPlayback] El vídeo ha llegado al final y continuará en loop.");
             }
+        }
+
+        private void ApplySelectedStimulusOverride()
+        {
+            if (!ExperimentSessionState.HasSelectedStimulus)
+            {
+                return;
+            }
+
+            ExperimentStimulusDefinition stimulus = ExperimentSessionState.SelectedStimulus;
+            if (stimulus == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(stimulus.VideoFileName))
+            {
+                videoFileName = stimulus.VideoFileName;
+            }
+
+            runtimeSelectedVideoPath = stimulus.VideoAbsolutePath ?? string.Empty;
+        }
+
+        private string ResolveVideoPath()
+        {
+            if (!string.IsNullOrWhiteSpace(runtimeSelectedVideoPath))
+            {
+                return runtimeSelectedVideoPath;
+            }
+
+            return Path.Combine(Application.streamingAssetsPath, "Videos", videoFileName);
         }
 
         public void PlayVideo()

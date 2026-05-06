@@ -1,4 +1,5 @@
 using AOI360.Runtime.AOI;
+using AOI360.Runtime.Experiment;
 using AOI360.Runtime.Mapping;
 using EyeGaze.Runtime.Core;
 using System.Collections.Generic;
@@ -94,11 +95,23 @@ namespace EyeGaze.Runtime.Modules
 
         public override void ProcessFrame(EyeGazeFrameData frameData)
         {
+            if (ExperimentSessionState.IsPlaybackStartLocked)
+            {
+                ResetModuleState();
+                return;
+            }
+
             UpdateVisualization(frameData.GazeOrigin, frameData.GazeDirection, frameData.RayEndPoint, frameData.DeltaTime);
         }
 
         public override void HandleTrackingLost(float deltaTime)
         {
+            if (ExperimentSessionState.IsPlaybackStartLocked)
+            {
+                ResetModuleState();
+                return;
+            }
+
             ResetFixationState();
 
             if (!enableDebugRay)
@@ -373,6 +386,14 @@ namespace EyeGaze.Runtime.Modules
             fixationCandidateStartTimestampMs = 0f;
             fixationCandidateDuration = 0f;
             fixationCommitCount = 0;
+            HasCommittedFixation = false;
+            LatestCommittedFixationSequence = 0;
+            LatestCommittedFixationTimestampMs = 0f;
+            LatestCommittedFixationPoint = Vector3.zero;
+            LatestCommittedFixationNormal = Vector3.forward;
+            LatestCommittedFixationUv = Vector2.zero;
+            LatestCommittedFixationAoiId = 0;
+            LatestCommittedFixationConfidence = 0f;
 
             if (hitMarkerVisual != null)
             {
