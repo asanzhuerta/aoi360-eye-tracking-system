@@ -128,18 +128,40 @@ namespace AOI360.Runtime.Experiment
         {
             if (!TryResolveRepositoryRoot(out string repositoryRoot))
             {
+                Debug.LogWarning("[ExperimentStimulusCatalog] No se ha podido resolver la raíz del repo. En Android build esto es normal: usa StreamingAssets.");
                 return;
             }
 
             string inputVideosRoot = Path.Combine(repositoryRoot, "data", "input_videos");
             string processedMetadataRoot = Path.Combine(repositoryRoot, "data", "processed", "metadata");
             string processedMapsRoot = Path.Combine(repositoryRoot, "data", "processed", "id_maps");
-            if (!Directory.Exists(inputVideosRoot) || !Directory.Exists(processedMetadataRoot) || !Directory.Exists(processedMapsRoot))
+
+            Debug.Log($"[ExperimentStimulusCatalog] Repo root: {repositoryRoot}");
+            Debug.Log($"[ExperimentStimulusCatalog] inputVideosRoot: {inputVideosRoot}");
+            Debug.Log($"[ExperimentStimulusCatalog] processedMetadataRoot: {processedMetadataRoot}");
+            Debug.Log($"[ExperimentStimulusCatalog] processedMapsRoot: {processedMapsRoot}");
+
+            if (!Directory.Exists(inputVideosRoot))
             {
+                Debug.LogWarning($"[ExperimentStimulusCatalog] No existe data/input_videos: {inputVideosRoot}");
+                return;
+            }
+
+            if (!Directory.Exists(processedMetadataRoot))
+            {
+                Debug.LogWarning($"[ExperimentStimulusCatalog] No existe data/processed/metadata: {processedMetadataRoot}");
+                return;
+            }
+
+            if (!Directory.Exists(processedMapsRoot))
+            {
+                Debug.LogWarning($"[ExperimentStimulusCatalog] No existe data/processed/id_maps: {processedMapsRoot}");
                 return;
             }
 
             string[] manifestPaths = Directory.GetFiles(processedMetadataRoot, $"*{ManifestSuffix}", SearchOption.TopDirectoryOnly);
+            Debug.Log($"[ExperimentStimulusCatalog] Manifests encontrados: {manifestPaths.Length}");
+
             for (int i = 0; i < manifestPaths.Length; i++)
             {
                 string manifestPath = manifestPaths[i];
@@ -149,6 +171,7 @@ namespace AOI360.Runtime.Experiment
                 string mapsDirectoryPath = Path.Combine(processedMapsRoot, sequenceName);
                 if (!Directory.Exists(mapsDirectoryPath))
                 {
+                    Debug.LogWarning($"[ExperimentStimulusCatalog] Se omite '{sequenceName}': no existe carpeta de mapas: {mapsDirectoryPath}");
                     continue;
                 }
 
@@ -156,6 +179,7 @@ namespace AOI360.Runtime.Experiment
                 string videoAbsolutePath = Path.Combine(inputVideosRoot, videoFileName);
                 if (!File.Exists(videoAbsolutePath))
                 {
+                    Debug.LogWarning($"[ExperimentStimulusCatalog] Se omite '{sequenceName}': no existe vídeo: {videoAbsolutePath}");
                     continue;
                 }
 
@@ -170,8 +194,8 @@ namespace AOI360.Runtime.Experiment
                     sourceLabel: "Repo:data"
                 );
 
-                // Prefer the repo outputs so the selector can consume freshly
-                // preprocessed stimuli without a manual mirror step first.
+                Debug.Log($"[ExperimentStimulusCatalog] Estímulo listo: {stimulus.DisplayName} | {stimulus.VideoAbsolutePath}");
+
                 stimuliByKey[sequenceName] = stimulus;
             }
         }
