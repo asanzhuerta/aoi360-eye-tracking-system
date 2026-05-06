@@ -112,6 +112,84 @@ def _resolve_prediction_size(
     return 960
 
 
+def _collect_detection_rows(
+    *,
+    model,
+    frame_paths: list[Path],
+    total_frames: int,
+    effective_batch_size: int,
+    prediction_size: tuple[int, int] | int,
+    box_threshold: float,
+    device_argument,
+    use_half_precision: bool,
+    model_id: str,
+    text_prompt: str,
+    progress_callback: ProgressCallback | None,
+    tqdm_module,
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    batch_starts = range(0, total_frames, effective_batch_size)
+    if progress_callback is None:
+        batch_starts = tqdm_module(batch_starts, desc="Running YOLO-World")
+    processed_index = 0
+
+    for batch_start in batch_starts:
+        batch_paths = frame_paths[batch_start: batch_start + effective_batch_size]
+        batch_sources = [str(frame_path) for frame_path in batch_paths]
+        batch_results = model.predict(
+            source=batch_sources,
+            conf=box_threshold,
+            imgsz=prediction_size,
+            device=device_argument,
+            half=use_half_precision,
+            verbose=False,
+            stream=False,
+            batch=len(batch_sources),
+        )
+
+        for frame_path, result in zip(batch_paths, batch_results):
+            boxes = result.boxes
+            detection_count = 0
+
+            if boxes is not None and len(boxes) > 0:
+                xyxy_boxes = boxes.xyxy.cpu().tolist()
+                confidence_scores = boxes.conf.cpu().tolist()
+                class_indices = boxes.cls.int().cpu().tolist()
+
+                for detection_index, (box, score, class_index) in enumerate(
+                    zip(xyxy_boxes, confidence_scores, class_indices)
+                ):
+                    x_min, y_min, x_max, y_max = box
+                    label = str(result.names[int(class_index)])
+                    rows.append(
+                        {
+                            "frame_index": get_frame_index(frame_path),
+                            "frame_file": frame_path.name,
+                            "detection_index": detection_index,
+                            "label": label,
+                            "confidence": float(score),
+                            "x_min": float(x_min),
+                            "y_min": float(y_min),
+                            "x_max": float(x_max),
+                            "y_max": float(y_max),
+                            "source": "yolo_world",
+                            "model_id": model_id,
+                            "prompt": text_prompt,
+                        }
+                    )
+                    detection_count += 1
+
+            processed_index += 1
+            _emit_progress(
+                progress_callback,
+                processed_index,
+                total_frames,
+                f"Processed {frame_path.name} with {detection_count} detections.",
+            )
+
+    return rows
+
+
 def detect_frames(
     frames_dir: str | Path,
     output_csv: str | Path,
@@ -174,76 +252,69 @@ def detect_frames(
             "[detect_yolo_world] Note: text_threshold is not used by YOLO-World and is ignored in this backend.",
         )
 
-    model = YOLOWorld(resolved_model_reference)
-    model.set_classes(class_prompts)
-
     frame_paths = sorted([*frames_dir.glob("*.jpg"), *frames_dir.glob("*.jpeg"), *frames_dir.glob("*.png")])
     if not frame_paths:
         raise RuntimeError(f"No images found in: {frames_dir}")
 
-    rows: list[dict[str, object]] = []
     total_frames = len(frame_paths)
     _emit_progress(progress_callback, 0, total_frames, "Loading YOLO-World and preparing detections.")
+    def _build_model():
+        built_model = YOLOWorld(resolved_model_reference)
+        built_model.set_classes(class_prompts)
+        return built_model
 
-    batch_starts = range(0, total_frames, effective_batch_size)
-    if progress_callback is None:
-        batch_starts = tqdm(batch_starts, desc="Running YOLO-World")
-
-    processed_index = 0
-
-    for batch_start in batch_starts:
-        batch_paths = frame_paths[batch_start: batch_start + effective_batch_size]
-        batch_sources = [str(frame_path) for frame_path in batch_paths]
-        batch_results = model.predict(
-            source=batch_sources,
-            conf=box_threshold,
-            imgsz=prediction_size,
-            device=device_argument,
-            half=runtime_summary.cuda_available and resolved_precision == "fp16",
-            verbose=False,
-            stream=False,
-            batch=len(batch_sources),
+    rows: list[dict[str, object]]
+    try:
+        rows = _collect_detection_rows(
+            model=_build_model(),
+            frame_paths=frame_paths,
+            total_frames=total_frames,
+            effective_batch_size=effective_batch_size,
+            prediction_size=prediction_size,
+            box_threshold=box_threshold,
+            device_argument=device_argument,
+            use_half_precision=runtime_summary.cuda_available and resolved_precision == "fp16",
+            model_id=model_id,
+            text_prompt=text_prompt,
+            progress_callback=progress_callback,
+            tqdm_module=tqdm,
         )
+    except Exception as exception:
+        should_retry_with_safe_cuda = (
+            runtime_summary.cuda_available and
+            device_argument != "cpu" and
+            (effective_batch_size > 1 or resolved_precision == "fp16")
+        )
+        if not should_retry_with_safe_cuda:
+            raise
 
-        for frame_path, result in zip(batch_paths, batch_results):
-            boxes = result.boxes
-            detection_count = 0
+        _emit_log(
+            log_callback,
+            (
+                "[detect_yolo_world] CUDA inference failed with the automatic settings. "
+                "Retrying with a safer configuration: batch_size=1, precision=fp32."
+            ),
+        )
+        _emit_log(log_callback, f"[detect_yolo_world] Original error: {type(exception).__name__}: {exception}")
 
-            if boxes is not None and len(boxes) > 0:
-                xyxy_boxes = boxes.xyxy.cpu().tolist()
-                confidence_scores = boxes.conf.cpu().tolist()
-                class_indices = boxes.cls.int().cpu().tolist()
+        if hasattr(torch.cuda, "empty_cache"):
+            torch.cuda.empty_cache()
 
-                for detection_index, (box, score, class_index) in enumerate(
-                    zip(xyxy_boxes, confidence_scores, class_indices)
-                ):
-                    x_min, y_min, x_max, y_max = box
-                    label = str(result.names[int(class_index)])
-                    rows.append(
-                        {
-                            "frame_index": get_frame_index(frame_path),
-                            "frame_file": frame_path.name,
-                            "detection_index": detection_index,
-                            "label": label,
-                            "confidence": float(score),
-                            "x_min": float(x_min),
-                            "y_min": float(y_min),
-                            "x_max": float(x_max),
-                            "y_max": float(y_max),
-                            "source": "yolo_world",
-                            "model_id": model_id,
-                            "prompt": text_prompt,
-                        }
-                    )
-                    detection_count += 1
-
-            processed_index += 1
-            _emit_progress(
-                progress_callback,
-                processed_index,
-                total_frames,
-                f"Processed {frame_path.name} with {detection_count} detections.",
-            )
+        _emit_progress(progress_callback, 0, total_frames, "Retrying YOLO-World with safer CUDA settings.")
+        rows = _collect_detection_rows(
+            model=_build_model(),
+            frame_paths=frame_paths,
+            total_frames=total_frames,
+            effective_batch_size=1,
+            prediction_size=prediction_size,
+            box_threshold=box_threshold,
+            device_argument=device_argument,
+            use_half_precision=False,
+            model_id=model_id,
+            text_prompt=text_prompt,
+            progress_callback=progress_callback,
+            tqdm_module=tqdm,
+        )
 
     detections = pd.DataFrame(rows, columns=DETECTION_COLUMNS)
     detections.to_csv(output_csv, index=False)
