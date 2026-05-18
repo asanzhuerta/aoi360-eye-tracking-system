@@ -25,6 +25,11 @@ namespace AOI360.Runtime.Experiment
             IsPlaybackStartLocked = false;
         }
 
+        public static void LockPlaybackStart()
+        {
+            IsPlaybackStartLocked = true;
+        }
+
         public static void Clear()
         {
             SelectedStimulus = null;

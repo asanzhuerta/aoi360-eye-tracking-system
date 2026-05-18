@@ -14,10 +14,10 @@ namespace AOI360.Runtime.Core
         // main video playback path for CPU time.
         private static readonly string[] TargetSceneNames =
         {
-            "Phase0_360Playback_VR_sampleRIG",
-            "Phase0_360Playback_VR"
+            "Phase0_360Playback_VR_sampleRIG"
         };
         private const string RuntimeBootstrapName = "Phase0Bootstrap_Runtime";
+        private static bool sceneHookRegistered;
 
         [Header("Overlay")]
         [SerializeField] private bool createAoiOverlay = true;
@@ -39,11 +39,32 @@ namespace AOI360.Runtime.Core
         private bool? lastHorizontalFlip;
         private bool? lastVerticalFlip;
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void EnsureBootstrap()
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void RegisterSceneHook()
         {
-            Scene activeScene = SceneManager.GetActiveScene();
-            if (!IsTargetScene(activeScene.name))
+            if (sceneHookRegistered)
+            {
+                return;
+            }
+
+            SceneManager.sceneLoaded += HandleSceneLoaded;
+            sceneHookRegistered = true;
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void EnsureBootstrapAfterSceneLoad()
+        {
+            EnsureBootstrapForScene(SceneManager.GetActiveScene());
+        }
+
+        private static void HandleSceneLoaded(Scene scene, LoadSceneMode loadMode)
+        {
+            EnsureBootstrapForScene(scene);
+        }
+
+        private static void EnsureBootstrapForScene(Scene scene)
+        {
+            if (!IsTargetScene(scene.name))
             {
                 return;
             }

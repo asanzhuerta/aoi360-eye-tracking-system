@@ -17,10 +17,10 @@ namespace AOI360.Runtime.AOI
         // lean by preferring the packed RGB stream over per-keyframe PNG loads.
         private static readonly string[] TargetSceneNames =
         {
-            "Phase0_360Playback_VR_sampleRIG",
-            "Phase0_360Playback_VR"
+            "Phase0_360Playback_VR_sampleRIG"
         };
         private const string RuntimeLoaderName = "AOISequenceRuntimeLoader_Runtime";
+        private static bool sceneHookRegistered;
 
         [Serializable]
         private class SequenceManifestDocument
@@ -96,6 +96,7 @@ namespace AOI360.Runtime.AOI
         [SerializeField] private bool logSequenceEvents = true;
 
         public bool IsSequenceLoaded => manifestDocument != null && frameEntries.Count > 0;
+        public bool HasPrimedInitialFrame { get; private set; }
         public int CurrentKeyframeFrameIndex { get; private set; } = -1;
         public string CurrentMapFile { get; private set; } = "";
         public string CurrentKeyframeFile { get; private set; } = "";
@@ -126,11 +127,32 @@ namespace AOI360.Runtime.AOI
         private FileStream runtimePackStream;
         private readonly Dictionary<int, int> frameIndexToSequenceIndex = new();
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void EnsureLoader()
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void RegisterSceneHook()
         {
-            Scene activeScene = SceneManager.GetActiveScene();
-            if (!IsTargetScene(activeScene.name))
+            if (sceneHookRegistered)
+            {
+                return;
+            }
+
+            SceneManager.sceneLoaded += HandleSceneLoaded;
+            sceneHookRegistered = true;
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void EnsureLoaderAfterSceneLoad()
+        {
+            EnsureLoaderForScene(SceneManager.GetActiveScene());
+        }
+
+        private static void HandleSceneLoaded(Scene scene, LoadSceneMode loadMode)
+        {
+            EnsureLoaderForScene(scene);
+        }
+
+        private static void EnsureLoaderForScene(Scene scene)
+        {
+            if (!IsTargetScene(scene.name))
             {
                 return;
             }
@@ -142,6 +164,7 @@ namespace AOI360.Runtime.AOI
 
             GameObject loaderObject = new GameObject(RuntimeLoaderName);
             loaderObject.AddComponent<AOISequenceRuntimeLoader>();
+            Debug.Log($"[AOISequenceRuntimeLoader] Runtime loader created for scene '{scene.name}'.");
         }
 
         private void Awake()
@@ -155,6 +178,12 @@ namespace AOI360.Runtime.AOI
             ResolveReferences();
             ApplySelectedStimulusOverride();
             TryLoadManifest();
+            TryPrimeInitialFrame();
+
+            Debug.Log(
+                $"[AOISequenceRuntimeLoader] Awake in scene '{SceneManager.GetActiveScene().name}'. " +
+                $"sequenceFolder='{sequenceFolderName}', selectedManifest='{runtimeSelectedManifestPath}'."
+            );
         }
 
         private static bool IsTargetScene(string sceneName)
@@ -173,6 +202,11 @@ namespace AOI360.Runtime.AOI
         private void Update()
         {
             ResolveReferences();
+
+            if (!HasPrimedInitialFrame && IsSequenceLoaded && aoiLookup != null)
+            {
+                TryPrimeInitialFrame();
+            }
 
             if (!autoLoadFromStreamingAssets || videoPlayback == null || aoiLookup == null || !IsSequenceLoaded)
             {
@@ -257,6 +291,8 @@ namespace AOI360.Runtime.AOI
             {
                 return;
             }
+
+            HasPrimedInitialFrame = false;
 
             resolvedSequenceFolder = ResolveSequenceFolderName();
             resolvedManifestFileName = ResolveManifestFileName();
@@ -441,13 +477,17 @@ namespace AOI360.Runtime.AOI
 
             runtimeAoiTexture = loadedTexture;
             TryInjectMetadataIntoLookup();
-            aoiLookup.SetRuntimeAoiTexture(runtimeAoiTexture, forceRefresh: true);
+            if (aoiLookup != null)
+            {
+                aoiLookup.SetRuntimeAoiTexture(runtimeAoiTexture, forceRefresh: true);
+            }
 
             currentFrameEntry = entry;
             CurrentKeyframeFrameIndex = entry.frameIndex;
             CurrentMapFile = entry.mapFile ?? "";
             CurrentKeyframeFile = entry.keyframeFile ?? "";
             CurrentKeyframeAoiCount = Mathf.Max(0, entry.aoiCount);
+            HasPrimedInitialFrame = runtimeAoiTexture != null;
 
             if (Application.isEditor && logSequenceEvents)
             {
@@ -468,6 +508,7 @@ namespace AOI360.Runtime.AOI
             CurrentKeyframeFile = "";
             CurrentKeyframeAoiCount = 0;
             ClearPreloadedFrameData();
+            HasPrimedInitialFrame = false;
 
             if (Application.isEditor && logSequenceEvents)
             {
@@ -852,6 +893,29 @@ namespace AOI360.Runtime.AOI
 
             runtimeSelectedManifestPath = stimulus.ManifestAbsolutePath ?? "";
             runtimeSelectedMapsDirectoryPath = stimulus.MapsDirectoryAbsolutePath ?? "";
+        }
+
+        private void TryPrimeInitialFrame()
+        {
+            if (!IsSequenceLoaded)
+            {
+                return;
+            }
+
+            ResolveReferences();
+
+            if (aoiLookup == null)
+            {
+                return;
+            }
+
+            FrameEntryDocument initialEntry = FindFrameEntryForVideoFrame(0);
+            if (initialEntry == null)
+            {
+                return;
+            }
+
+            LoadFrameEntry(initialEntry);
         }
 
         private string ResolveSequenceFolderName()

@@ -81,7 +81,8 @@ namespace AOI360.Runtime.Experiment
             textComponent.fontStyle = fontStyle;
             textComponent.alignment = alignment;
             textComponent.color = color;
-            textComponent.enableWordWrapping = true;
+            textComponent.textWrappingMode = TextWrappingModes.Normal;
+            textComponent.extraPadding = true;
             textComponent.margin = new Vector4(20f, 12f, 20f, 12f);
             return textComponent;
         }
@@ -91,6 +92,7 @@ namespace AOI360.Runtime.Experiment
             RectTransform rectTransform = CreateUiObject(name, parent, new Vector2(0f, 0f), new Vector2(1f, 1f));
             Image image = rectTransform.gameObject.AddComponent<Image>();
             image.sprite = GetWhiteSprite();
+            image.type = Image.Type.Sliced;
             image.color = backgroundColor;
 
             Button button = rectTransform.gameObject.AddComponent<Button>();

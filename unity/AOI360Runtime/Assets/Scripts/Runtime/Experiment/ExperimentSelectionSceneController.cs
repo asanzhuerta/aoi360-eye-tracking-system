@@ -17,15 +17,20 @@ namespace AOI360.Runtime.Experiment
 
         private static readonly string[] PlaybackSceneCandidates =
         {
-            "Phase0_360Playback_VR_sampleRIG",
-            "Phase0_360Playback_VR"
+            "Phase0_360Playback_VR_sampleRIG"
         };
 
         private const string RuntimeObjectName = "ExperimentSelectionSceneController_Runtime";
         private const string RuntimeCanvasName = "ExperimentSelectionCanvas_Runtime";
+        private const float UiReferencePixelsPerUnit = 100f;
+        private const float UiDynamicPixelsPerUnit = 96f;
+        private const float SelectionCanvasWorldDepthMeters = 2.6f;
+        private const float SelectionCanvasScale = 0.0015f;
+        private const float SelectionCanvasMinimumHeightMeters = 1.55f;
+        private const float SelectionCanvasHeightOffsetMeters = 0.18f;
 
-        private const float StimulusButtonHeight = 104f;
-        private const float StimulusButtonSpacing = 16f;
+        private const float StimulusButtonHeight = 112f;
+        private const float StimulusButtonSpacing = 18f;
         private const float StimulusButtonTopPadding = 8f;
 
         [Header("Scene UI")]
@@ -41,30 +46,77 @@ namespace AOI360.Runtime.Experiment
         private readonly List<Button> stimulusButtons = new();
 
         private Canvas rootCanvas;
+        private RectTransform rootCanvasRect;
         private RectTransform listContentRoot;
         private TextMeshProUGUI statusText;
         private TextMeshProUGUI sourceSummaryText;
         private Camera presentationCamera;
         private bool isLoadingSelection;
+        private bool hasCachedCanvasTransform;
         private InputActionAsset runtimeUiActionsAsset;
         private Button firstStimulusButton;
+        private Vector3 cachedCanvasWorldPosition;
+        private static bool sceneHookRegistered;
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void EnsureController()
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void RegisterSceneHook()
         {
-            Scene activeScene = SceneManager.GetActiveScene();
-            if (!IsSelectionScene(activeScene.name))
+            if (sceneHookRegistered)
             {
                 return;
             }
 
-            if (FindFirstObjectByType<ExperimentSelectionSceneController>() != null)
+            SceneManager.sceneLoaded += HandleSceneLoaded;
+            sceneHookRegistered = true;
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void EnsureControllerAfterSceneLoad()
+        {
+            EnsureControllerForScene(SceneManager.GetActiveScene());
+        }
+
+        private static void HandleSceneLoaded(Scene scene, LoadSceneMode loadMode)
+        {
+            EnsureControllerForScene(scene);
+        }
+
+        private static void EnsureControllerForScene(Scene scene)
+        {
+            if (!IsSelectionScene(scene.name))
+            {
+                return;
+            }
+
+            if (FindControllerInScene(scene) != null)
             {
                 return;
             }
 
             GameObject runtimeObject = new GameObject(RuntimeObjectName);
             runtimeObject.AddComponent<ExperimentSelectionSceneController>();
+        }
+
+        private static ExperimentSelectionSceneController FindControllerInScene(Scene scene)
+        {
+            if (!scene.isLoaded)
+            {
+                return null;
+            }
+
+            GameObject[] rootObjects = scene.GetRootGameObjects();
+            for (int i = 0; i < rootObjects.Length; i++)
+            {
+                ExperimentSelectionSceneController controller =
+                    rootObjects[i].GetComponentInChildren<ExperimentSelectionSceneController>(true);
+
+                if (controller != null)
+                {
+                    return controller;
+                }
+            }
+
+            return null;
         }
 
         private void Awake()
@@ -119,6 +171,11 @@ namespace AOI360.Runtime.Experiment
                 Destroy(runtimeUiActionsAsset);
                 runtimeUiActionsAsset = null;
             }
+        }
+
+        private void LateUpdate()
+        {
+            MaintainPresentationCanvasTransform();
         }
 
         private void EnsureEventSystem()
@@ -391,6 +448,13 @@ namespace AOI360.Runtime.Experiment
             RectTransform canvasRect = sceneCanvas.GetComponent<RectTransform>();
             ConfigurePresentationCanvas(sceneCanvas.gameObject, canvasRect);
 
+            CanvasScaler canvasScaler = sceneCanvas.GetComponent<CanvasScaler>();
+            if (canvasScaler != null)
+            {
+                canvasScaler.referencePixelsPerUnit = UiReferencePixelsPerUnit;
+                canvasScaler.dynamicPixelsPerUnit = Mathf.Max(canvasScaler.dynamicPixelsPerUnit, UiDynamicPixelsPerUnit);
+            }
+
             if (sceneStimulusButtonTemplate != null)
             {
                 sceneStimulusButtonTemplate.gameObject.SetActive(false);
@@ -425,37 +489,55 @@ namespace AOI360.Runtime.Experiment
 
         private void BuildRuntimeUi()
         {
-            GameObject existingRuntimeCanvas = GameObject.Find(RuntimeCanvasName);
-            if (existingRuntimeCanvas != null)
+            GameObject canvasObject;
+            CanvasScaler scaler;
+
+            if (sceneCanvas != null)
             {
-                Destroy(existingRuntimeCanvas);
+                canvasObject = sceneCanvas.gameObject;
+                rootCanvas = sceneCanvas;
+                scaler = canvasObject.GetComponent<CanvasScaler>();
+
+                if (scaler == null)
+                {
+                    scaler = canvasObject.AddComponent<CanvasScaler>();
+                }
             }
+            else
+            {
+                GameObject existingRuntimeCanvas = GameObject.Find(RuntimeCanvasName);
+                if (existingRuntimeCanvas != null)
+                {
+                    Destroy(existingRuntimeCanvas);
+                }
 
-            GameObject canvasObject = new GameObject(
-                RuntimeCanvasName,
-                typeof(Canvas),
-                typeof(CanvasScaler),
-                typeof(GraphicRaycaster)
-            );
+                canvasObject = new GameObject(
+                    RuntimeCanvasName,
+                    typeof(Canvas),
+                    typeof(CanvasScaler),
+                    typeof(GraphicRaycaster)
+                );
 
-            dynamicUiObjects.Add(canvasObject);
-            rootCanvas = canvasObject.GetComponent<Canvas>();
+                dynamicUiObjects.Add(canvasObject);
+                rootCanvas = canvasObject.GetComponent<Canvas>();
+                scaler = canvasObject.GetComponent<CanvasScaler>();
+            }
 
             rootCanvas.sortingOrder = 5000;
             rootCanvas.overrideSorting = true;
 
-            CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1400f, 800f);
+            scaler.referencePixelsPerUnit = UiReferencePixelsPerUnit;
             scaler.matchWidthOrHeight = 0.5f;
-            scaler.dynamicPixelsPerUnit = 24f;
+            scaler.dynamicPixelsPerUnit = UiDynamicPixelsPerUnit;
 
-            RectTransform canvasRect = canvasObject.GetComponent<RectTransform>();
-            ConfigurePresentationCanvas(canvasObject, canvasRect);
+            rootCanvasRect = canvasObject.GetComponent<RectTransform>();
+            ConfigurePresentationCanvas(canvasObject, rootCanvasRect);
 
             RectTransform background = ExperimentRuntimeUi.CreateUiObject(
                 "Background",
-                canvasRect,
+                rootCanvasRect,
                 new Vector2(0f, 0f),
                 new Vector2(1f, 1f)
             );
@@ -490,7 +572,7 @@ namespace AOI360.Runtime.Experiment
                 "Title",
                 modal,
                 "Selecciona el video del experimento",
-                38f,
+                40f,
                 FontStyles.Bold,
                 TextAlignmentOptions.MidlineLeft,
                 Color.white
@@ -507,8 +589,8 @@ namespace AOI360.Runtime.Experiment
             TextMeshProUGUI subtitleText = ExperimentRuntimeUi.CreateText(
                 "Subtitle",
                 modal,
-                "Elige un estimulo procesado para abrir la escena VR. Usa gatillo / Enter / boton principal para confirmar.",
-                20f,
+                "Elige un estimulo procesado. Todos los botones abren la misma escena VR base y cambian el video y los AOIs. Usa gatillo / Enter / boton principal para confirmar.",
+                22f,
                 FontStyles.Normal,
                 TextAlignmentOptions.TopLeft,
                 new Color(0.82f, 0.87f, 0.96f, 0.92f)
@@ -557,7 +639,7 @@ namespace AOI360.Runtime.Experiment
                 "SourceSummary",
                 modal,
                 string.Empty,
-                20f,
+                22f,
                 FontStyles.Normal,
                 TextAlignmentOptions.BottomLeft,
                 new Color(0.78f, 0.84f, 0.93f, 0.95f)
@@ -575,7 +657,7 @@ namespace AOI360.Runtime.Experiment
                 "Status",
                 modal,
                 "Esperando seleccion...",
-                22f,
+                24f,
                 FontStyles.Bold,
                 TextAlignmentOptions.BottomLeft,
                 new Color(0.96f, 0.82f, 0.48f, 1f)
@@ -607,6 +689,7 @@ namespace AOI360.Runtime.Experiment
                 return;
             }
 
+            rootCanvasRect = canvasRect;
             rootCanvas.renderMode = RenderMode.WorldSpace;
             rootCanvas.worldCamera = presentationCamera;
             rootCanvas.sortingOrder = 5000;
@@ -617,21 +700,52 @@ namespace AOI360.Runtime.Experiment
                 canvasObject.AddComponent<TrackedDeviceRaycaster>();
             }
 
-            canvasRect.SetParent(presentationCamera.transform, false);
             canvasRect.anchorMin = new Vector2(0.5f, 0.5f);
             canvasRect.anchorMax = new Vector2(0.5f, 0.5f);
             canvasRect.pivot = new Vector2(0.5f, 0.5f);
             canvasRect.sizeDelta = new Vector2(1400f, 800f);
 
-            canvasRect.localPosition = new Vector3(0f, 0f, 2.4f);
-            canvasRect.localRotation = Quaternion.identity;
-            canvasRect.localScale = Vector3.one * 0.00135f;
+            cachedCanvasWorldPosition = ResolveSelectionCanvasWorldPosition(presentationCamera);
+            hasCachedCanvasTransform = true;
+
+            canvasRect.position = cachedCanvasWorldPosition;
+            canvasRect.rotation = Quaternion.identity;
+            canvasRect.localScale = Vector3.one * SelectionCanvasScale;
 
             Debug.Log(
-                $"[ExperimentSelectionSceneController] Selection canvas attached to camera '{presentationCamera.name}' " +
-                $"at local position {canvasRect.localPosition}, " +
+                $"[ExperimentSelectionSceneController] Selection canvas fixed in scene space from camera '{presentationCamera.name}' " +
+                $"at world position {canvasRect.position}, " +
+                $"rotation {canvasRect.rotation.eulerAngles}, " +
                 $"scale ({canvasRect.localScale.x:F5}, {canvasRect.localScale.y:F5}, {canvasRect.localScale.z:F5})."
             );
+        }
+
+        private void MaintainPresentationCanvasTransform()
+        {
+            if (!hasCachedCanvasTransform || rootCanvas == null || rootCanvasRect == null)
+            {
+                return;
+            }
+
+            if (rootCanvas.renderMode != RenderMode.WorldSpace)
+            {
+                return;
+            }
+
+            rootCanvasRect.position = cachedCanvasWorldPosition;
+            rootCanvasRect.rotation = Quaternion.identity;
+            rootCanvasRect.localScale = Vector3.one * SelectionCanvasScale;
+        }
+
+        private static Vector3 ResolveSelectionCanvasWorldPosition(Camera camera)
+        {
+            float currentCameraHeight = camera != null ? camera.transform.position.y : 0f;
+            float anchoredHeight = Mathf.Max(
+                SelectionCanvasMinimumHeightMeters,
+                currentCameraHeight + SelectionCanvasHeightOffsetMeters
+            );
+
+            return new Vector3(0f, anchoredHeight, SelectionCanvasWorldDepthMeters);
         }
 
         private static Camera ResolvePresentationCamera()
@@ -648,6 +762,11 @@ namespace AOI360.Runtime.Experiment
         private static void EnsureTrackedVrCamera(Camera camera)
         {
             if (camera == null)
+            {
+                return;
+            }
+
+            if (HierarchyHasTrackedPoseDriver(camera.transform))
             {
                 return;
             }
@@ -688,6 +807,26 @@ namespace AOI360.Runtime.Experiment
 
             trackedPoseDriver.positionInput = new InputActionProperty(positionAction);
             trackedPoseDriver.rotationInput = new InputActionProperty(rotationAction);
+        }
+
+        private static bool HierarchyHasTrackedPoseDriver(Transform current)
+        {
+            while (current != null)
+            {
+                if (current.GetComponent<UnityEngine.SpatialTracking.TrackedPoseDriver>() != null)
+                {
+                    return true;
+                }
+
+                if (current.GetComponent<TrackedPoseDriver>() != null)
+                {
+                    return true;
+                }
+
+                current = current.parent;
+            }
+
+            return false;
         }
 
         private void PopulateStimulusList()
@@ -741,7 +880,7 @@ namespace AOI360.Runtime.Experiment
             if (statusText != null)
             {
                 statusText.text = stimuli.Count > 0
-                    ? "Selecciona un video para abrir la escena VR y lanzar la cuenta atras."
+                    ? "Selecciona un video para abrir la escena VR base y lanzar la cuenta atras."
                     : "No hay videos listos. Revisa `data/input_videos` y `data/processed`, o sincroniza `StreamingAssets`.";
             }
 
@@ -838,14 +977,14 @@ namespace AOI360.Runtime.Experiment
                 button.transform,
                 "Title",
                 stimulus.DisplayName,
-                26f,
+                30f,
                 FontStyles.Bold,
                 TextAlignmentOptions.Left,
                 Color.white,
                 new Vector2(0f, 1f),
                 new Vector2(1f, 1f),
                 new Vector2(0.5f, 1f),
-                new Vector2(0f, 40f),
+                new Vector2(0f, 44f),
                 new Vector2(0f, -8f),
                 new Vector4(24f, 8f, 24f, 0f),
                 false
@@ -861,15 +1000,15 @@ namespace AOI360.Runtime.Experiment
                 button.transform,
                 "Details",
                 detailText,
-                18f,
+                20f,
                 FontStyles.Normal,
                 TextAlignmentOptions.Left,
                 new Color(1f, 0.95f, 0.82f, 0.98f),
                 new Vector2(0f, 1f),
                 new Vector2(1f, 1f),
                 new Vector2(0.5f, 1f),
-                new Vector2(0f, 36f),
-                new Vector2(0f, -50f),
+                new Vector2(0f, 40f),
+                new Vector2(0f, -56f),
                 new Vector4(24f, 4f, 24f, 8f),
                 false
             );
@@ -949,7 +1088,7 @@ namespace AOI360.Runtime.Experiment
             rectTransform.anchoredPosition = anchoredPosition;
 
             textComponent.margin = margin;
-            textComponent.enableWordWrapping = wrapText;
+            textComponent.textWrappingMode = wrapText ? TextWrappingModes.Normal : TextWrappingModes.NoWrap;
 
             return textComponent;
         }
@@ -963,13 +1102,17 @@ namespace AOI360.Runtime.Experiment
 
             isLoadingSelection = true;
 
-            Debug.Log($"[ExperimentSelectionSceneController] Selected stimulus: {stimulus.DisplayName}");
+            Debug.Log(
+                $"[ExperimentSelectionSceneController] Selected stimulus: {stimulus.DisplayName} | " +
+                $"video={stimulus.VideoFileName} | sequence={stimulus.SequenceName} | " +
+                $"scene={ResolvePlaybackSceneName()}"
+            );
 
             ExperimentSessionState.SetSelectedStimulus(stimulus, lockPlaybackStart: true, countdownSeconds: 5f);
 
             if (statusText != null)
             {
-                statusText.text = $"Abriendo experimento para: {stimulus.DisplayName}";
+                statusText.text = $"Abriendo escena VR base para: {stimulus.DisplayName}";
             }
 
             SceneManager.LoadScene(ResolvePlaybackSceneName());

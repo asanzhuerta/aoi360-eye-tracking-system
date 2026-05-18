@@ -40,13 +40,18 @@ namespace AOI360.Runtime.Logging
         private bool isRecording = false;
         private float sessionStartTime;
         private int lastExportedFixationSequence;
+        private bool hasExportedCurrentRows;
 
         public bool IsRecording => isRecording;
+        public string LastExportPath { get; private set; } = string.Empty;
 
         private void Start()
         {
             rows.Clear();
             rows.Add(BuildHeader());
+            hasExportedCurrentRows = false;
+            LastExportPath = string.Empty;
+            ResolveReferences();
 
             if (recordOnStart)
             {
@@ -56,6 +61,8 @@ namespace AOI360.Runtime.Logging
 
         private void Update()
         {
+            ResolveReferences();
+
             if (recordOnStart && !isRecording)
             {
                 TryStartRecording();
@@ -131,7 +138,7 @@ namespace AOI360.Runtime.Logging
 
         private void OnDisable()
         {
-            if (autoExportOnDisable && rows.Count > 1)
+            if (autoExportOnDisable && rows.Count > 1 && !hasExportedCurrentRows)
             {
                 ExportCsv();
             }
@@ -139,9 +146,12 @@ namespace AOI360.Runtime.Logging
 
         public void StartRecording()
         {
+            ResolveReferences();
             sessionStartTime = Time.time;
             isRecording = true;
             lastExportedFixationSequence = 0;
+            hasExportedCurrentRows = false;
+            LastExportPath = string.Empty;
 
             if (logRecordingState)
             {
@@ -159,9 +169,19 @@ namespace AOI360.Runtime.Logging
             }
         }
 
-        public void ExportCsv()
+        public void ExportCsv(bool allowHeaderOnly = false)
         {
-            if (rows.Count <= 1)
+            if (rows.Count == 0)
+            {
+                rows.Add(BuildHeader());
+            }
+
+            if (!allowHeaderOnly && rows.Count <= 1)
+            {
+                return;
+            }
+
+            if (hasExportedCurrentRows)
             {
                 return;
             }
@@ -174,11 +194,15 @@ namespace AOI360.Runtime.Logging
             string filePath = Path.Combine(folderPath, fileName);
 
             File.WriteAllText(filePath, BuildCsvContent(), Encoding.UTF8);
+            LastExportPath = filePath;
+            hasExportedCurrentRows = true;
             Debug.Log($"[DataRecorder] CSV exported to: {filePath}");
         }
 
         private void TryStartRecording()
         {
+            ResolveReferences();
+
             if (isRecording)
             {
                 return;
@@ -209,6 +233,34 @@ namespace AOI360.Runtime.Logging
             }
 
             StartRecording();
+        }
+
+        private void ResolveReferences()
+        {
+            if (videoPlayback == null)
+            {
+                videoPlayback = FindFirstObjectByType<VideoPlayback>();
+            }
+
+            if (sphericalMapper == null)
+            {
+                sphericalMapper = FindFirstObjectByType<SphericalMapper>();
+            }
+
+            if (aoiLookup == null)
+            {
+                aoiLookup = FindFirstObjectByType<AOILookup>();
+            }
+
+            if (eyeGazeSystem == null)
+            {
+                eyeGazeSystem = FindFirstObjectByType<EyeGazeSystem>();
+            }
+
+            if (debugVisualizer == null)
+            {
+                debugVisualizer = FindFirstObjectByType<EyeGazeDebugVisualizer>();
+            }
         }
 
         private string BuildHeader()

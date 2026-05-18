@@ -1,9 +1,11 @@
 using System.Collections;
+using System.Text;
 using AOI360.Runtime.AOI;
 using AOI360.Runtime.Logging;
 using AOI360.Runtime.Video;
 using TMPro;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
@@ -14,10 +16,19 @@ namespace AOI360.Runtime.Experiment
     {
         private static readonly string[] TargetSceneNames =
         {
-            "Phase0_360Playback_VR_sampleRIG",
-            "Phase0_360Playback_VR"
+            "Phase0_360Playback_VR_sampleRIG"
         };
+
         private const string RuntimeObjectName = "ExperimentPlaybackFlowController_Runtime";
+        private const float MaxVideoWaitAfterCountdownSeconds = 8f;
+        private const float MaxAoiPrimeWaitAfterCountdownSeconds = 1.5f;
+        private const float OverlayDynamicPixelsPerUnit = 96f;
+        private const float OverlayReferencePixelsPerUnit = 100f;
+        private const float ReturnToSelectionDelaySeconds = 5f;
+        private const string EndExperimentMessage = "Experimento finalizado";
+        private const string SelectionSceneName = "Initial_Scene";
+
+        private static bool sceneHookRegistered;
 
         [Header("Scene References")]
         [SerializeField] private VideoPlayback sceneVideoPlayback;
@@ -38,12 +49,36 @@ namespace AOI360.Runtime.Experiment
         private TextMeshProUGUI titleText;
         private TextMeshProUGUI countdownText;
         private TextMeshProUGUI subtitleText;
+        private InputAction endExperimentAction;
+        private bool hasExperimentFinished;
+        private Coroutine returnToSelectionCoroutine;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void RegisterSceneHook()
+        {
+            if (sceneHookRegistered)
+            {
+                return;
+            }
+
+            SceneManager.sceneLoaded += HandleSceneLoaded;
+            sceneHookRegistered = true;
+        }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void EnsureController()
+        private static void EnsureControllerAfterSceneLoad()
         {
-            Scene activeScene = SceneManager.GetActiveScene();
-            if (!IsTargetScene(activeScene.name))
+            EnsureControllerForScene(SceneManager.GetActiveScene());
+        }
+
+        private static void HandleSceneLoaded(Scene scene, LoadSceneMode loadMode)
+        {
+            EnsureControllerForScene(scene);
+        }
+
+        private static void EnsureControllerForScene(Scene scene)
+        {
+            if (!IsTargetScene(scene.name))
             {
                 return;
             }
@@ -55,6 +90,7 @@ namespace AOI360.Runtime.Experiment
 
             GameObject runtimeObject = new GameObject(RuntimeObjectName);
             runtimeObject.AddComponent<ExperimentPlaybackFlowController>();
+            Debug.Log($"[ExperimentPlaybackFlowController] Runtime controller created for scene '{scene.name}'.");
         }
 
         private void Awake()
@@ -64,12 +100,39 @@ namespace AOI360.Runtime.Experiment
                 enabled = false;
                 return;
             }
+
+            ConfigureEndExperimentAction();
+            Debug.Log($"[ExperimentPlaybackFlowController] Awake in scene '{SceneManager.GetActiveScene().name}'.");
+        }
+
+        private void Update()
+        {
+            if (hasExperimentFinished)
+            {
+                return;
+            }
+
+            ResolveReferences();
+
+            if (videoPlayback != null && videoPlayback.HasReachedPlaybackEnd)
+            {
+                Debug.Log("[ExperimentPlaybackFlowController] Video playback reached its natural end.");
+                FinishExperiment();
+                return;
+            }
+
+            if (endExperimentAction != null && endExperimentAction.WasPressedThisFrame())
+            {
+                Debug.Log("[ExperimentPlaybackFlowController] End experiment action detected in Update.");
+                FinishExperiment();
+            }
         }
 
         private IEnumerator Start()
         {
             if (!ExperimentSessionState.HasSelectedStimulus)
             {
+                Debug.LogWarning("[ExperimentPlaybackFlowController] No selected stimulus was found. Countdown flow cancelled.");
                 yield break;
             }
 
@@ -77,75 +140,105 @@ namespace AOI360.Runtime.Experiment
             BuildOverlay();
 
             ExperimentStimulusDefinition stimulus = ExperimentSessionState.SelectedStimulus;
-            SetOverlayState(
-                title: "Preparando experimento",
-                countdown: "…",
-                subtitle: $"Cargando {stimulus.DisplayName} y su secuencia AOI"
-            );
+            float countdownDuration = Mathf.Max(0f, ExperimentSessionState.CountdownSeconds);
+            float countdownEndTime = Time.unscaledTime + countdownDuration;
+            float postCountdownWaitStartedAt = -1f;
+            bool startedWithoutPrimedAoi = false;
 
-            while (videoPlayback == null)
+            while (true)
             {
                 ResolveReferences();
-                yield return null;
-            }
+                videoPlayback?.BeginPrepareIfNeeded();
 
-            float loadingStartedAt = Time.realtimeSinceStartup;
-            float maxAoiWaitSeconds = 3f;
+                bool hasVideoPlayback = videoPlayback != null;
+                bool videoReady = hasVideoPlayback && videoPlayback.IsPrepared;
+                bool videoFailed = hasVideoPlayback && videoPlayback.HasPreparationFailed;
+                bool aoiSequenceReady = aoiSequenceRuntimeLoader == null || aoiSequenceRuntimeLoader.IsSequenceLoaded;
+                bool aoiPrimeReady = aoiSequenceRuntimeLoader == null || aoiSequenceRuntimeLoader.HasPrimedInitialFrame;
+                bool countdownFinished = Time.unscaledTime >= countdownEndTime;
 
-            while (!videoPlayback.IsPrepared)
-            {
-                ResolveReferences();
-
-                SetOverlayState(
-                    title: "Preparando experimento",
-                    countdown: "…",
-                    subtitle: $"Preparando vídeo: {stimulus.DisplayName}"
-                );
-
-                yield return null;
-            }
-
-            while (aoiSequenceRuntimeLoader != null && !aoiSequenceRuntimeLoader.IsSequenceLoaded)
-            {
-                ResolveReferences();
-
-                float elapsed = Time.realtimeSinceStartup - loadingStartedAt;
-                if (elapsed >= maxAoiWaitSeconds)
+                if (videoFailed)
                 {
+                    string failureSubtitle = BuildFailureSubtitle(stimulus);
+                    SetOverlayState("No se pudo iniciar el experimento", "!", failureSubtitle);
+                    Debug.LogError($"[ExperimentPlaybackFlowController] {failureSubtitle}");
+                    yield break;
+                }
+
+                if (!countdownFinished)
+                {
+                    int visibleSeconds = Mathf.Max(1, Mathf.CeilToInt(countdownEndTime - Time.unscaledTime));
+                    SetOverlayState(
+                        title: "El experimento comienza en",
+                        countdown: visibleSeconds.ToString(),
+                        subtitle: BuildPreparationSubtitle(
+                            stimulus,
+                            hasVideoPlayback,
+                            videoReady,
+                            aoiSequenceReady,
+                            aoiPrimeReady,
+                            waitingAfterCountdown: false
+                        )
+                    );
+
+                    yield return null;
+                    continue;
+                }
+
+                if (videoReady && aoiSequenceReady && aoiPrimeReady)
+                {
+                    break;
+                }
+
+                if (postCountdownWaitStartedAt < 0f)
+                {
+                    postCountdownWaitStartedAt = Time.unscaledTime;
+                }
+
+                float postCountdownWait = Time.unscaledTime - postCountdownWaitStartedAt;
+                if (videoReady && aoiSequenceReady && !aoiPrimeReady && postCountdownWait >= MaxAoiPrimeWaitAfterCountdownSeconds)
+                {
+                    startedWithoutPrimedAoi = true;
                     Debug.LogWarning(
-                        $"[ExperimentPlaybackFlowController] AOI sequence not ready after {maxAoiWaitSeconds:0.0}s. " +
-                        "Starting video anyway so playback is not blocked."
+                        "[ExperimentPlaybackFlowController] AOI initial frame was not primed in time. " +
+                        "Starting playback anyway to avoid blocking the experiment."
                     );
                     break;
                 }
 
+                if (!videoReady && postCountdownWait >= MaxVideoWaitAfterCountdownSeconds)
+                {
+                    string failureSubtitle = BuildFailureSubtitle(stimulus);
+                    SetOverlayState("No se pudo iniciar el experimento", "!", failureSubtitle);
+                    Debug.LogError($"[ExperimentPlaybackFlowController] Video preparation timed out. {failureSubtitle}");
+                    yield break;
+                }
+
                 SetOverlayState(
                     title: "Preparando experimento",
-                    countdown: "…",
-                    subtitle: $"Vídeo listo, esperando AOIs: {stimulus.DisplayName}"
+                    countdown: "0",
+                    subtitle: BuildPreparationSubtitle(
+                        stimulus,
+                        hasVideoPlayback,
+                        videoReady,
+                        aoiSequenceReady,
+                        aoiPrimeReady,
+                        waitingAfterCountdown: true
+                    )
                 );
 
-                yield return null;
-            }
-
-            float remainingSeconds = Mathf.Max(0f, ExperimentSessionState.CountdownSeconds);
-            while (remainingSeconds > 0f)
-            {
-                int visibleSeconds = Mathf.Max(1, Mathf.CeilToInt(remainingSeconds));
-                SetOverlayState(
-                    title: "El experimento comienza en",
-                    countdown: visibleSeconds.ToString(),
-                    subtitle: stimulus.VideoFileName
-                );
-
-                remainingSeconds -= Time.unscaledDeltaTime;
                 yield return null;
             }
 
             ExperimentSessionState.UnlockPlaybackStart();
 
-            Debug.Log("[ExperimentPlaybackFlowController] Countdown finished. Starting video playback.");
-            videoPlayback.PlayVideo();
+            Debug.Log(
+                $"[ExperimentPlaybackFlowController] Countdown finished. Starting video playback. " +
+                $"startedWithoutPrimedAoi={startedWithoutPrimedAoi}"
+            );
+
+            videoPlayback?.SetLoop(false);
+            videoPlayback?.PlayVideo();
 
             if (dataRecorder != null && !dataRecorder.IsRecording)
             {
@@ -153,6 +246,17 @@ namespace AOI360.Runtime.Experiment
             }
 
             DestroyOverlay();
+        }
+
+        private void OnDestroy()
+        {
+            if (endExperimentAction != null)
+            {
+                endExperimentAction.performed -= HandleEndExperimentPerformed;
+                endExperimentAction.Disable();
+                endExperimentAction.Dispose();
+                endExperimentAction = null;
+            }
         }
 
         private void ResolveReferences()
@@ -199,9 +303,17 @@ namespace AOI360.Runtime.Experiment
             {
                 overlayCanvas = sceneOverlayCanvas;
                 overlayCanvas.gameObject.SetActive(true);
+
                 if (overlayCanvas.renderMode == RenderMode.WorldSpace && overlayCanvas.worldCamera == null)
                 {
                     overlayCanvas.worldCamera = ResolvePresentationCamera();
+                }
+
+                CanvasScaler sceneScaler = overlayCanvas.GetComponent<CanvasScaler>();
+                if (sceneScaler != null)
+                {
+                    sceneScaler.referencePixelsPerUnit = OverlayReferencePixelsPerUnit;
+                    sceneScaler.dynamicPixelsPerUnit = Mathf.Max(sceneScaler.dynamicPixelsPerUnit, OverlayDynamicPixelsPerUnit);
                 }
 
                 titleText = sceneTitleText;
@@ -219,12 +331,14 @@ namespace AOI360.Runtime.Experiment
 
             overlayCanvas = canvasObject.GetComponent<Canvas>();
             overlayCanvas.sortingOrder = 1200;
+            overlayCanvas.overrideSorting = true;
 
             CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1600f, 900f);
+            scaler.referencePixelsPerUnit = OverlayReferencePixelsPerUnit;
             scaler.matchWidthOrHeight = 0.5f;
-            scaler.dynamicPixelsPerUnit = 16f;
+            scaler.dynamicPixelsPerUnit = OverlayDynamicPixelsPerUnit;
 
             RectTransform canvasRect = canvasObject.GetComponent<RectTransform>();
             ConfigureOverlayCanvas(canvasRect);
@@ -243,7 +357,7 @@ namespace AOI360.Runtime.Experiment
                 new Vector2(0.5f, 0.5f),
                 new Vector2(0.5f, 0.5f)
             );
-            panel.sizeDelta = new Vector2(760f, 420f);
+            panel.sizeDelta = new Vector2(780f, 440f);
             panel.anchoredPosition = Vector2.zero;
             ExperimentRuntimeUi.AddPanelImage(panel, new Color(0.09f, 0.11f, 0.16f, 0.98f));
 
@@ -251,7 +365,7 @@ namespace AOI360.Runtime.Experiment
                 "Title",
                 panel,
                 "Preparando experimento",
-                34f,
+                36f,
                 FontStyles.Bold,
                 TextAlignmentOptions.Center,
                 Color.white
@@ -267,8 +381,8 @@ namespace AOI360.Runtime.Experiment
             countdownText = ExperimentRuntimeUi.CreateText(
                 "Countdown",
                 panel,
-                "…",
-                122f,
+                "...",
+                130f,
                 FontStyles.Bold,
                 TextAlignmentOptions.Center,
                 new Color(0.97f, 0.83f, 0.48f, 1f)
@@ -277,8 +391,8 @@ namespace AOI360.Runtime.Experiment
             countdownRect.anchorMin = new Vector2(0f, 0.5f);
             countdownRect.anchorMax = new Vector2(1f, 0.5f);
             countdownRect.pivot = new Vector2(0.5f, 0.5f);
-            countdownRect.sizeDelta = new Vector2(0f, 160f);
-            countdownRect.anchoredPosition = new Vector2(0f, 12f);
+            countdownRect.sizeDelta = new Vector2(0f, 170f);
+            countdownRect.anchoredPosition = new Vector2(0f, 14f);
             countdownText.raycastTarget = false;
 
             subtitleText = ExperimentRuntimeUi.CreateText(
@@ -294,9 +408,101 @@ namespace AOI360.Runtime.Experiment
             subtitleRect.anchorMin = new Vector2(0f, 0f);
             subtitleRect.anchorMax = new Vector2(1f, 0f);
             subtitleRect.pivot = new Vector2(0.5f, 0f);
-            subtitleRect.sizeDelta = new Vector2(0f, 96f);
+            subtitleRect.sizeDelta = new Vector2(0f, 104f);
             subtitleRect.anchoredPosition = new Vector2(0f, 28f);
             subtitleText.raycastTarget = false;
+        }
+
+        private string BuildPreparationSubtitle(
+            ExperimentStimulusDefinition stimulus,
+            bool hasVideoPlayback,
+            bool videoReady,
+            bool aoiSequenceReady,
+            bool aoiPrimeReady,
+            bool waitingAfterCountdown
+        )
+        {
+            StringBuilder builder = new StringBuilder();
+
+            if (stimulus != null)
+            {
+                builder.Append(stimulus.DisplayName);
+
+                if (!string.IsNullOrWhiteSpace(stimulus.VideoFileName))
+                {
+                    builder.Append(" | ");
+                    builder.Append(stimulus.VideoFileName);
+                }
+            }
+
+            if (builder.Length > 0)
+            {
+                builder.Append(" | ");
+            }
+
+            if (!hasVideoPlayback)
+            {
+                builder.Append("buscando reproductor");
+            }
+            else if (!videoReady)
+            {
+                builder.Append(waitingAfterCountdown ? "terminando de preparar video" : "preparando video");
+            }
+            else
+            {
+                builder.Append("video listo");
+            }
+
+            if (aoiSequenceRuntimeLoader != null)
+            {
+                builder.Append(" | ");
+
+                if (!aoiSequenceReady)
+                {
+                    builder.Append("cargando secuencia AOI");
+                }
+                else if (!aoiPrimeReady)
+                {
+                    builder.Append("precargando AOI inicial");
+                }
+                else
+                {
+                    builder.Append("AOIs listos");
+                }
+            }
+
+            return builder.ToString();
+        }
+
+        private string BuildFailureSubtitle(ExperimentStimulusDefinition stimulus)
+        {
+            StringBuilder builder = new StringBuilder();
+
+            if (stimulus != null)
+            {
+                builder.Append(stimulus.DisplayName);
+            }
+            else
+            {
+                builder.Append("Stimulus");
+            }
+
+            builder.Append(" | ");
+
+            if (videoPlayback == null)
+            {
+                builder.Append("No se encontro VideoPlayback en la escena.");
+            }
+            else if (!string.IsNullOrWhiteSpace(videoPlayback.LastPrepareErrorMessage))
+            {
+                builder.Append(videoPlayback.LastPrepareErrorMessage);
+            }
+            else
+            {
+                builder.Append("No se pudo preparar el video.");
+            }
+
+            return builder.ToString();
         }
 
         private void SetOverlayState(string title, string countdown, string subtitle)
@@ -332,6 +538,95 @@ namespace AOI360.Runtime.Experiment
 
                 overlayCanvas = null;
             }
+        }
+
+        private void ConfigureEndExperimentAction()
+        {
+            if (endExperimentAction != null)
+            {
+                return;
+            }
+
+            endExperimentAction = new InputAction(
+                name: "EndExperiment",
+                type: InputActionType.Button
+            );
+            endExperimentAction.AddBinding("<XRController>{RightHand}/primaryButton");
+            endExperimentAction.AddBinding("<XRController>{RightHand}/secondaryButton");
+            endExperimentAction.AddBinding("<XRController>{RightHand}/menuButton");
+            endExperimentAction.AddBinding("<XRController>/primaryButton");
+            endExperimentAction.AddBinding("<XRController>/secondaryButton");
+            endExperimentAction.AddBinding("<Joystick>/button0");
+            endExperimentAction.AddBinding("<Gamepad>/buttonSouth");
+            endExperimentAction.AddBinding("<Keyboard>/escape");
+            endExperimentAction.performed += HandleEndExperimentPerformed;
+            endExperimentAction.Enable();
+        }
+
+        private void HandleEndExperimentPerformed(InputAction.CallbackContext context)
+        {
+            if (hasExperimentFinished)
+            {
+                return;
+            }
+
+            string controlPath = context.control != null ? context.control.path : "unknown-control";
+            Debug.Log($"[ExperimentPlaybackFlowController] End experiment action performed by: {controlPath}");
+            FinishExperiment();
+        }
+
+        private void FinishExperiment()
+        {
+            if (hasExperimentFinished)
+            {
+                return;
+            }
+
+            hasExperimentFinished = true;
+            ExperimentSessionState.LockPlaybackStart();
+
+            videoPlayback?.StopVideo();
+
+            if (dataRecorder != null)
+            {
+                if (dataRecorder.IsRecording)
+                {
+                    dataRecorder.StopRecording();
+                }
+
+                dataRecorder.ExportCsv(allowHeaderOnly: true);
+            }
+
+            BuildOverlay();
+            SetOverlayState(
+                EndExperimentMessage,
+                string.Empty,
+                BuildCompletionSubtitle()
+            );
+
+            if (returnToSelectionCoroutine == null)
+            {
+                returnToSelectionCoroutine = StartCoroutine(ReturnToSelectionAfterDelay());
+            }
+
+            Debug.Log("[ExperimentPlaybackFlowController] Experiment finished. Returning to the initial scene shortly.");
+        }
+
+        private string BuildCompletionSubtitle()
+        {
+            if (dataRecorder == null || string.IsNullOrWhiteSpace(dataRecorder.LastExportPath))
+            {
+                return $"El video se ha detenido y la sesion ha quedado cerrada.\nVolviendo al menu inicial en {ReturnToSelectionDelaySeconds:0} segundos.";
+            }
+
+            return $"CSV exportado en: {dataRecorder.LastExportPath}\nVolviendo al menu inicial en {ReturnToSelectionDelaySeconds:0} segundos.";
+        }
+
+        private IEnumerator ReturnToSelectionAfterDelay()
+        {
+            yield return new WaitForSecondsRealtime(ReturnToSelectionDelaySeconds);
+            ExperimentSessionState.Clear();
+            SceneManager.LoadScene(SelectionSceneName);
         }
 
         private void ConfigureOverlayCanvas(RectTransform canvasRect)

@@ -15,8 +15,7 @@ namespace AOI360.Runtime.XR
         {
             "Initial_Scene",
             "SampleScene",
-            "Phase0_360Playback_VR_sampleRIG",
-            "Phase0_360Playback_VR"
+            "Phase0_360Playback_VR_sampleRIG"
         };
 
         private const string RuntimeObjectName = "RuntimeControllerPoseBridge_Runtime";
@@ -25,6 +24,7 @@ namespace AOI360.Runtime.XR
             "Assets/Samples/VIVE OpenXR Plugin/2.5.0/VIVE OpenXR Samples/Samples/Commons/VRSPrefabs/Controller/Focus3_Left.prefab";
         private const string RightControllerPrefabPath =
             "Assets/Samples/VIVE OpenXR Plugin/2.5.0/VIVE OpenXR Samples/Samples/Commons/VRSPrefabs/Controller/Focus3_Right.prefab";
+        private static bool sceneHookRegistered;
 
         private InputAction leftTrackedAction;
         private InputAction leftDevicePositionAction;
@@ -49,22 +49,65 @@ namespace AOI360.Runtime.XR
         private LineRenderer leftPointerLine;
         private LineRenderer rightPointerLine;
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void EnsureBridge()
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void RegisterSceneHook()
         {
-            Scene activeScene = SceneManager.GetActiveScene();
-            if (!IsTargetScene(activeScene.name))
+            if (sceneHookRegistered)
             {
                 return;
             }
 
-            if (FindFirstObjectByType<RuntimeControllerPoseBridge>() != null)
+            SceneManager.sceneLoaded += HandleSceneLoaded;
+            sceneHookRegistered = true;
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void EnsureBridgeAfterSceneLoad()
+        {
+            EnsureBridgeForScene(SceneManager.GetActiveScene());
+        }
+
+        private static void HandleSceneLoaded(Scene scene, LoadSceneMode loadMode)
+        {
+            EnsureBridgeForScene(scene);
+        }
+
+        private static void EnsureBridgeForScene(Scene scene)
+        {
+            if (!IsTargetScene(scene.name))
+            {
+                return;
+            }
+
+            if (FindBridgeInScene(scene) != null)
             {
                 return;
             }
 
             GameObject runtimeObject = new GameObject(RuntimeObjectName);
             runtimeObject.AddComponent<RuntimeControllerPoseBridge>();
+        }
+
+        private static RuntimeControllerPoseBridge FindBridgeInScene(Scene scene)
+        {
+            if (!scene.isLoaded)
+            {
+                return null;
+            }
+
+            GameObject[] rootObjects = scene.GetRootGameObjects();
+            for (int i = 0; i < rootObjects.Length; i++)
+            {
+                RuntimeControllerPoseBridge bridge =
+                    rootObjects[i].GetComponentInChildren<RuntimeControllerPoseBridge>(true);
+
+                if (bridge != null)
+                {
+                    return bridge;
+                }
+            }
+
+            return null;
         }
 
         private void Awake()
@@ -317,7 +360,8 @@ namespace AOI360.Runtime.XR
             Renderer existingRenderer = anchor.GetComponentInChildren<Renderer>(true);
             if (existingRenderer != null)
             {
-                return existingRenderer.transform.root.gameObject;
+                Transform visualRoot = ResolveVisualRootUnderAnchor(existingRenderer.transform, anchor);
+                return visualRoot != null ? visualRoot.gameObject : existingRenderer.gameObject;
             }
 
             GameObject prefabInstance = TryInstantiateEditorPrefab(name, anchor, prefabPath);
@@ -327,6 +371,22 @@ namespace AOI360.Runtime.XR
             }
 
             return CreateBodyVisual(name, anchor, fallbackColor);
+        }
+
+        private static Transform ResolveVisualRootUnderAnchor(Transform rendererTransform, Transform anchor)
+        {
+            if (rendererTransform == null || anchor == null)
+            {
+                return null;
+            }
+
+            Transform current = rendererTransform;
+            while (current.parent != null && current.parent != anchor)
+            {
+                current = current.parent;
+            }
+
+            return current;
         }
 
         private static GameObject CreateBodyVisual(string name, Transform parent, Color color)
@@ -410,7 +470,21 @@ namespace AOI360.Runtime.XR
             LineRenderer pointerLine
         )
         {
-            bool isTracked = trackedAction != null && trackedAction.ReadValue<float>() > 0.5f;
+            Vector3 devicePosition = devicePositionAction != null ? devicePositionAction.ReadValue<Vector3>() : Vector3.zero;
+            Quaternion deviceRotation = deviceRotationAction != null
+                ? deviceRotationAction.ReadValue<Quaternion>()
+                : Quaternion.identity;
+
+            Vector3 pointerPosition = pointerPositionAction != null ? pointerPositionAction.ReadValue<Vector3>() : devicePosition;
+            Quaternion pointerRotation = pointerRotationAction != null
+                ? pointerRotationAction.ReadValue<Quaternion>()
+                : deviceRotation;
+
+            bool explicitTracked = trackedAction != null && trackedAction.ReadValue<float>() > 0.5f;
+            bool hasPosePosition = devicePosition.sqrMagnitude > 0.0001f || pointerPosition.sqrMagnitude > 0.0001f;
+            bool hasPoseRotation = QuaternionLooksValid(deviceRotation) || QuaternionLooksValid(pointerRotation);
+            bool isTracked = explicitTracked || (hasPosePosition && hasPoseRotation);
+
             if (!isTracked)
             {
                 if (bodyVisual != null)
@@ -425,16 +499,6 @@ namespace AOI360.Runtime.XR
 
                 return;
             }
-
-            Vector3 devicePosition = devicePositionAction != null ? devicePositionAction.ReadValue<Vector3>() : Vector3.zero;
-            Quaternion deviceRotation = deviceRotationAction != null
-                ? deviceRotationAction.ReadValue<Quaternion>()
-                : Quaternion.identity;
-
-            Vector3 pointerPosition = pointerPositionAction != null ? pointerPositionAction.ReadValue<Vector3>() : devicePosition;
-            Quaternion pointerRotation = pointerRotationAction != null
-                ? pointerRotationAction.ReadValue<Quaternion>()
-                : deviceRotation;
 
             if (!QuaternionLooksValid(deviceRotation))
             {
