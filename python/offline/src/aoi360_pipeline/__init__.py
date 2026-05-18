@@ -10,9 +10,11 @@ The package intentionally keeps the first phase simple:
 __all__ = [
     "aoi_map_builder",
     "aoi_map_sequence_builder",
+    "cache_roots",
     "detection_contract",
     "detectors",
     "frame_extraction",
     "grounding_dino",
+    "owlv2",
     "yolo_world",
 ]

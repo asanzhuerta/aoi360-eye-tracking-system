@@ -1,11 +1,11 @@
 from __future__ import annotations
-"""Run Grounding DINO over extracted frames and normalize the detections output."""
+
+"""Run OWLv2 over extracted frames and normalize the detections output."""
 
 import argparse
-import inspect
-import warnings
-from concurrent.futures import ThreadPoolExecutor
+import re
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
@@ -20,8 +20,7 @@ from aoi360_pipeline.cache_roots import (
 from aoi360_pipeline.detection_contract import DETECTION_COLUMNS, get_frame_index
 from aoi360_pipeline.runtime_environment import inspect_torch_runtime
 
-
-DEFAULT_MODEL_ID = "IDEA-Research/grounding-dino-tiny"
+DEFAULT_MODEL_ID = "google/owlv2-base-patch16-ensemble"
 ProgressCallback = Callable[[int, int, str], None]
 LogCallback = Callable[[str], None]
 _PROCESSOR_CACHE: dict[tuple[str], object] = {}
@@ -31,28 +30,25 @@ _CACHE_LOCK = RLock()
 
 @dataclass(frozen=True)
 class PreparedFrame:
-    """Carry one frame through the batched inference pipeline."""
-
     frame_path: Path
     frame_index: int
     image: object
     target_size: tuple[int, int]
 
-def _lazy_import_transformers_stack():
-    # Delay the heavy ML imports until the command actually runs so simple
-    # metadata operations and --help stay cheap and environment-friendly.
+
+def _lazy_import_owlv2_stack():
     configure_huggingface_cache_environment()
     try:
         import torch
         from PIL import Image
         from tqdm import tqdm
-        from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
+        from transformers import Owlv2ForObjectDetection, Owlv2Processor
     except ImportError as exc:  # pragma: no cover - depends on local environment
         raise RuntimeError(
-            "Grounding DINO dependencies are missing. Install the offline pipeline dependencies first."
+            "OWLv2 dependencies are missing. Install the offline pipeline dependencies first."
         ) from exc
 
-    return torch, Image, tqdm, AutoModelForZeroShotObjectDetection, AutoProcessor
+    return torch, Image, tqdm, Owlv2ForObjectDetection, Owlv2Processor
 
 
 def _emit_log(log_callback: LogCallback | None, message: str) -> None:
@@ -73,13 +69,6 @@ def _emit_progress(
 
 
 def _load_pretrained_asset(pretrained_factory, model_id: str, *, log_callback: LogCallback | None = None, **kwargs):
-    """Prefer the local Hugging Face cache, then fall back to remote resolution.
-
-    This keeps repeated preprocessing and benchmarking runs reproducible when
-    the local environment is sandboxed or temporarily offline, while still
-    allowing first-time model downloads on fully connected machines.
-    """
-
     primary_cache_root = configure_huggingface_cache_environment()
     local_failures: list[str] = []
     for cache_root in iter_huggingface_cache_roots():
@@ -89,7 +78,7 @@ def _load_pretrained_asset(pretrained_factory, model_id: str, *, log_callback: L
             snapshot_kwargs["local_files_only"] = True
             try:
                 asset = pretrained_factory.from_pretrained(str(snapshot_path), **snapshot_kwargs)
-                _emit_log(log_callback, f"[detect_grounding_dino] Loaded assets from cached snapshot: {snapshot_path}")
+                _emit_log(log_callback, f"[detect_owlv2] Loaded assets from cached snapshot: {snapshot_path}")
                 return asset
             except Exception as local_exception:
                 local_failures.append(f"{snapshot_path} -> {local_exception}")
@@ -99,7 +88,7 @@ def _load_pretrained_asset(pretrained_factory, model_id: str, *, log_callback: L
         local_kwargs["local_files_only"] = True
         try:
             asset = pretrained_factory.from_pretrained(model_id, **local_kwargs)
-            _emit_log(log_callback, f"[detect_grounding_dino] Loaded assets from local cache root: {cache_root}")
+            _emit_log(log_callback, f"[detect_owlv2] Loaded assets from local cache root: {cache_root}")
             return asset
         except Exception as local_exception:
             local_failures.append(f"{cache_root} -> {local_exception}")
@@ -107,7 +96,7 @@ def _load_pretrained_asset(pretrained_factory, model_id: str, *, log_callback: L
     _emit_log(
         log_callback,
         (
-            "[detect_grounding_dino] Local cache lookup failed; falling back to remote resolution. "
+            "[detect_owlv2] Local cache lookup failed; falling back to remote resolution. "
             f"Tried: {' | '.join(local_failures)}"
         ),
     )
@@ -116,7 +105,7 @@ def _load_pretrained_asset(pretrained_factory, model_id: str, *, log_callback: L
         return pretrained_factory.from_pretrained(model_id, cache_dir=str(primary_cache_root), **kwargs)
     except Exception as remote_exception:
         raise RuntimeError(
-            "Grounding DINO could not be loaded from the local cache or from the remote Hugging Face repository. "
+            "OWLv2 could not be loaded from the local cache or from the remote Hugging Face repository. "
             "If the model was already downloaded before, check that the cache is still available."
         ) from remote_exception
 
@@ -132,7 +121,7 @@ def _get_cached_processor(
         cached_processor = _PROCESSOR_CACHE.get(cache_key)
 
     if cached_processor is not None:
-        _emit_log(log_callback, f"[detect_grounding_dino] Reusing cached processor for: {model_id}")
+        _emit_log(log_callback, f"[detect_owlv2] Reusing cached processor for: {model_id}")
         return cached_processor
 
     built_processor = _load_pretrained_asset(processor_factory, model_id, log_callback=log_callback)
@@ -156,7 +145,7 @@ def _get_cached_model(
 
     if cached_model is not None:
         cached_model.eval()
-        _emit_log(log_callback, f"[detect_grounding_dino] Reusing cached model for: {model_id} [{device}, {precision}]")
+        _emit_log(log_callback, f"[detect_owlv2] Reusing cached model for: {model_id} [{device}, {precision}]")
         return cached_model
 
     built_model = _load_pretrained_asset(
@@ -172,94 +161,6 @@ def _get_cached_model(
 
     cached_model.eval()
     return cached_model
-
-
-def prefetch_model_assets(
-    model_id: str = DEFAULT_MODEL_ID,
-    *,
-    precision: str = "auto",
-    log_callback: LogCallback | None = None,
-) -> dict[str, str]:
-    torch, _, _, AutoModelForZeroShotObjectDetection, AutoProcessor = _lazy_import_transformers_stack()
-    runtime_summary = inspect_torch_runtime(torch)
-    device = runtime_summary.default_device
-    resolved_precision = runtime_summary.recommended_precision if precision == "auto" else precision.lower()
-    if resolved_precision not in {"fp16", "fp32"}:
-        raise ValueError("precision must be one of: auto, fp16, fp32")
-    if device != "cuda":
-        resolved_precision = "fp32"
-
-    cache_root = configure_huggingface_cache_environment()
-    _emit_log(log_callback, f"[detect_grounding_dino] Prefetching assets into local cache: {cache_root}")
-
-    model_kwargs = {}
-    if device == "cuda" and resolved_precision == "fp16":
-        model_kwargs["dtype"] = torch.float16
-
-    _get_cached_processor(
-        processor_factory=AutoProcessor,
-        model_id=model_id,
-        log_callback=log_callback,
-    )
-    _get_cached_model(
-        model_factory=AutoModelForZeroShotObjectDetection,
-        model_id=model_id,
-        device=device,
-        precision=resolved_precision,
-        model_kwargs=model_kwargs,
-        log_callback=log_callback,
-    )
-
-    return {
-        "model_id": model_id,
-        "cache_root": str(cache_root),
-        "device": device,
-        "precision": resolved_precision,
-    }
-
-
-def _post_process_grounding_dino_results(
-    processor,
-    outputs,
-    input_ids,
-    box_threshold: float,
-    text_threshold: float,
-    target_sizes,
-):
-    # Hugging Face has changed this processor signature across versions. The
-    # adapter keeps the rest of the pipeline independent from that drift.
-    post_process = processor.post_process_grounded_object_detection
-    parameters = inspect.signature(post_process).parameters
-
-    kwargs = {
-        "outputs": outputs,
-        "input_ids": input_ids,
-        "target_sizes": target_sizes,
-    }
-
-    # Transformers has shipped this API under two compatible names across versions:
-    # `threshold` in some releases and `box_threshold` in others. Support both so the
-    # project does not depend on a single pinned signature to run.
-    if "box_threshold" in parameters:
-        kwargs["box_threshold"] = box_threshold
-    elif "threshold" in parameters:
-        kwargs["threshold"] = box_threshold
-    else:
-        raise RuntimeError(
-            "Unsupported Grounding DINO processor API: expected either "
-            "`box_threshold` or `threshold` in post_process_grounded_object_detection()."
-        )
-
-    if "text_threshold" in parameters:
-        kwargs["text_threshold"] = text_threshold
-
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            message=r"The key `labels` is will return integer ids in `GroundingDinoProcessor\.post_process_grounded_object_detection` output since v4\.51\.0\. Use `text_labels` instead to retrieve string object names\.",
-            category=FutureWarning,
-        )
-        return post_process(**kwargs)
 
 
 def _resolve_resampling_filter(image_module):
@@ -310,6 +211,79 @@ def _prepare_frame(
     )
 
 
+def _parse_open_vocabulary_labels(text_prompt: str) -> tuple[list[str], dict[str, str]]:
+    prompt_tokens = re.split(r"[,\n]+|\.(?:\s|$)", text_prompt)
+    query_labels: list[str] = []
+    label_map: dict[str, str] = {}
+    seen_tokens: set[str] = set()
+
+    for token in prompt_tokens:
+        normalized_token = token.strip()
+        if not normalized_token:
+            continue
+
+        lowered_token = normalized_token.lower()
+        if lowered_token in seen_tokens:
+            continue
+
+        seen_tokens.add(lowered_token)
+        query_label = normalized_token
+        if not lowered_token.startswith(("a ", "an ", "the ")):
+            query_label = f"a photo of a {normalized_token}"
+
+        query_labels.append(query_label)
+        label_map[query_label] = normalized_token
+
+    if not query_labels:
+        raise ValueError("text_prompt must contain at least one non-empty class prompt for OWLv2.")
+
+    return query_labels, label_map
+
+
+def prefetch_model_assets(
+    model_id: str = DEFAULT_MODEL_ID,
+    *,
+    precision: str = "auto",
+    log_callback: LogCallback | None = None,
+) -> dict[str, str]:
+    torch, _, _, Owlv2ForObjectDetection, Owlv2Processor = _lazy_import_owlv2_stack()
+    runtime_summary = inspect_torch_runtime(torch)
+    device = runtime_summary.default_device
+    resolved_precision = runtime_summary.recommended_precision if precision == "auto" else precision.lower()
+    if resolved_precision not in {"fp16", "fp32"}:
+        raise ValueError("precision must be one of: auto, fp16, fp32")
+    if device != "cuda":
+        resolved_precision = "fp32"
+
+    cache_root = configure_huggingface_cache_environment()
+    _emit_log(log_callback, f"[detect_owlv2] Prefetching assets into local cache: {cache_root}")
+
+    model_kwargs = {}
+    if device == "cuda" and resolved_precision == "fp16":
+        model_kwargs["torch_dtype"] = torch.float16
+
+    _get_cached_processor(
+        processor_factory=Owlv2Processor,
+        model_id=model_id,
+        log_callback=log_callback,
+    )
+    _get_cached_model(
+        model_factory=Owlv2ForObjectDetection,
+        model_id=model_id,
+        device=device,
+        precision=resolved_precision,
+        model_kwargs=model_kwargs,
+        log_callback=log_callback,
+    )
+
+    return {
+        "model_id": model_id,
+        "cache_root": str(cache_root),
+        "device": device,
+        "precision": resolved_precision,
+    }
+
+
 def detect_frames(
     frames_dir: str | Path,
     output_csv: str | Path,
@@ -325,18 +299,13 @@ def detect_frames(
     progress_callback: ProgressCallback | None = None,
     log_callback: LogCallback | None = None,
 ) -> pd.DataFrame:
-    # This stage only owns model inference and CSV normalization. Later stages
-    # decide which detections become persistent AOIs for Unity.
-    torch, Image, tqdm, AutoModelForZeroShotObjectDetection, AutoProcessor = _lazy_import_transformers_stack()
+    torch, Image, tqdm, Owlv2ForObjectDetection, Owlv2Processor = _lazy_import_owlv2_stack()
 
     frames_dir = Path(frames_dir)
     output_csv = Path(output_csv)
 
     if not frames_dir.exists():
         raise FileNotFoundError(f"Frames directory not found: {frames_dir}")
-
-    if not text_prompt or not text_prompt.strip():
-        raise ValueError("text_prompt must not be empty")
 
     if not 0.0 <= box_threshold <= 1.0:
         raise ValueError("box_threshold must be between 0.0 and 1.0")
@@ -359,39 +328,32 @@ def detect_frames(
     if device != "cuda":
         resolved_precision = "fp32"
 
-    _emit_log(log_callback, f"[detect_grounding_dino] Runtime: {runtime_summary.short_label}")
-    _emit_log(log_callback, f"[detect_grounding_dino] Using device: {device}")
-    _emit_log(log_callback, f"[detect_grounding_dino] Model: {model_id}")
-    _emit_log(log_callback, f"[detect_grounding_dino] Local Hugging Face cache: {cache_root}")
-    _emit_log(log_callback, f"[detect_grounding_dino] Batch size: {effective_batch_size}")
-    _emit_log(log_callback, f"[detect_grounding_dino] Precision: {resolved_precision}")
-    if inference_max_width or inference_max_height:
+    query_labels, label_map = _parse_open_vocabulary_labels(text_prompt)
+
+    _emit_log(log_callback, f"[detect_owlv2] Runtime: {runtime_summary.short_label}")
+    _emit_log(log_callback, f"[detect_owlv2] Using device: {device}")
+    _emit_log(log_callback, f"[detect_owlv2] Model: {model_id}")
+    _emit_log(log_callback, f"[detect_owlv2] Local Hugging Face cache: {cache_root}")
+    _emit_log(log_callback, f"[detect_owlv2] Batch size: {effective_batch_size}")
+    _emit_log(log_callback, f"[detect_owlv2] Precision: {resolved_precision}")
+    _emit_log(log_callback, f"[detect_owlv2] Prompt classes: {', '.join(query_labels)}")
+    if text_threshold != 0.25:
         _emit_log(
             log_callback,
-            (
-                "[detect_grounding_dino] Downscaling frames for inference to at most "
-                f"{inference_max_width or 'full'}x{inference_max_height or 'full'}."
-            ),
+            "[detect_owlv2] Note: text_threshold is not used by OWLv2 and is ignored in this backend.",
         )
-
-    if device == "cuda":
-        torch.backends.cudnn.benchmark = True
-        try:
-            torch.set_float32_matmul_precision("high")
-        except Exception:
-            pass
 
     model_kwargs = {}
     if device == "cuda" and resolved_precision == "fp16":
-        model_kwargs["dtype"] = torch.float16
+        model_kwargs["torch_dtype"] = torch.float16
 
     processor = _get_cached_processor(
-        processor_factory=AutoProcessor,
+        processor_factory=Owlv2Processor,
         model_id=model_id,
         log_callback=log_callback,
     )
     model = _get_cached_model(
-        model_factory=AutoModelForZeroShotObjectDetection,
+        model_factory=Owlv2ForObjectDetection,
         model_id=model_id,
         device=device,
         precision=resolved_precision,
@@ -404,15 +366,9 @@ def detect_frames(
         raise RuntimeError(f"No images found in: {frames_dir}")
 
     rows: list[dict[str, object]] = []
-
-    iterator = frame_paths
-    if progress_callback is None:
-        iterator = tqdm(frame_paths, desc="Running Grounding DINO")
-
     total_frames = len(frame_paths)
-    _emit_progress(progress_callback, 0, total_frames, "Loading Grounding DINO and preparing detections.")
+    _emit_progress(progress_callback, 0, total_frames, "Loading OWLv2 and preparing detections.")
 
-    del iterator  # The tqdm wrapper is replaced by explicit batched progress below.
     image_loader = lambda path: _prepare_frame(
         frame_path=path,
         image_module=Image,
@@ -423,7 +379,7 @@ def detect_frames(
     processed_index = 0
     batch_starts = range(0, len(frame_paths), effective_batch_size)
     if progress_callback is None:
-        batch_starts = tqdm(batch_starts, desc="Running Grounding DINO")
+        batch_starts = tqdm(batch_starts, desc="Running OWLv2")
 
     for batch_start in batch_starts:
         batch_paths = frame_paths[batch_start: batch_start + effective_batch_size]
@@ -435,8 +391,9 @@ def detect_frames(
 
         input_images = [prepared_frame.image for prepared_frame in prepared_batch]
         target_sizes = [prepared_frame.target_size for prepared_frame in prepared_batch]
-        input_prompts = [text_prompt] * len(prepared_batch)
-        inputs = processor(images=input_images, text=input_prompts, return_tensors="pt").to(device)
+        batch_text_labels = [query_labels] * len(prepared_batch)
+        inputs = processor(text=batch_text_labels, images=input_images, return_tensors="pt").to(device)
+
         with torch.inference_mode():
             if device == "cuda" and resolved_precision == "fp16":
                 with torch.autocast(device_type="cuda", dtype=torch.float16):
@@ -444,26 +401,21 @@ def detect_frames(
             else:
                 outputs = model(**inputs)
 
-        batch_results = _post_process_grounding_dino_results(
-            processor=processor,
+        results_batch = processor.post_process_grounded_object_detection(
             outputs=outputs,
-            input_ids=inputs.input_ids,
-            box_threshold=box_threshold,
-            text_threshold=text_threshold,
             target_sizes=target_sizes,
+            threshold=box_threshold,
+            text_labels=batch_text_labels,
         )
 
-        for prepared_frame, results in zip(prepared_batch, batch_results):
+        for prepared_frame, results in zip(prepared_batch, results_batch):
             boxes = results["boxes"].cpu().tolist()
             scores = results["scores"].cpu().tolist()
-            raw_text_labels = results.get("text_labels")
-            if raw_text_labels is not None:
-                labels = [str(label) for label in raw_text_labels]
-            else:
-                labels = [str(label) for label in results["labels"]]
+            raw_labels = [str(label) for label in results["text_labels"]]
 
-            for detection_index, (box, score, label) in enumerate(zip(boxes, scores, labels)):
+            for detection_index, (box, score, raw_label) in enumerate(zip(boxes, scores, raw_labels)):
                 x_min, y_min, x_max, y_max = box
+                label = label_map.get(raw_label, raw_label)
                 rows.append(
                     {
                         "frame_index": prepared_frame.frame_index,
@@ -475,7 +427,7 @@ def detect_frames(
                         "y_min": float(y_min),
                         "x_max": float(x_max),
                         "y_max": float(y_max),
-                        "source": "grounding_dino",
+                        "source": "owlv2",
                         "model_id": model_id,
                         "prompt": text_prompt,
                     }
@@ -492,15 +444,15 @@ def detect_frames(
     detections = pd.DataFrame(rows, columns=DETECTION_COLUMNS)
     detections.to_csv(output_csv, index=False)
 
-    _emit_log(log_callback, f"[detect_grounding_dino] Frames processed: {len(frame_paths)}")
-    _emit_log(log_callback, f"[detect_grounding_dino] Detections exported: {len(detections)}")
-    _emit_log(log_callback, f"[detect_grounding_dino] CSV written to: {output_csv}")
+    _emit_log(log_callback, f"[detect_owlv2] Frames processed: {len(frame_paths)}")
+    _emit_log(log_callback, f"[detect_owlv2] Detections exported: {len(detections)}")
+    _emit_log(log_callback, f"[detect_owlv2] CSV written to: {output_csv}")
     return detections
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run Grounding DINO over extracted 360 frames and export bounding boxes to CSV."
+        description="Run OWLv2 over extracted 360 frames and export bounding boxes to CSV."
     )
     parser.add_argument(
         "--frames-dir",
@@ -509,13 +461,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output-csv",
-        default="data/interim/detections/video_360_grounding_dino_boxes.csv",
+        default="data/interim/detections/video_360_owlv2_boxes.csv",
         help="CSV path where detections will be written.",
     )
     parser.add_argument(
         "--text-prompt",
         default="person. face. bottle. screen. product.",
-        help="Grounding DINO text prompt. Dot-separated prompts work well for the model.",
+        help="OWLv2 prompt list. Dot-separated prompts are normalized into text labels automatically.",
     )
     parser.add_argument("--box-threshold", type=float, default=0.35)
     parser.add_argument("--text-threshold", type=float, default=0.25)

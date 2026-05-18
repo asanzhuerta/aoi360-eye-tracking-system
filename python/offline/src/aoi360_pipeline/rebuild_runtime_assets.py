@@ -14,6 +14,7 @@ from pathlib import Path
 from aoi360_pipeline.aoi_map_sequence_builder import build_aoi_sequence
 from aoi360_pipeline.detectors import (
     DEFAULT_DETECTOR,
+    SUPPORTED_DETECTORS,
     default_detections_csv_name,
     detect_frames_with_backend,
     detector_display_name,
@@ -317,7 +318,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--detector",
         default=DEFAULT_DETECTOR,
-        choices=["grounding_dino", "yolo_world"],
+        choices=sorted(SUPPORTED_DETECTORS),
         help="Open-vocabulary detector backend to use for sparse-frame detections.",
     )
     parser.add_argument(

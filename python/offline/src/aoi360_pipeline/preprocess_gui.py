@@ -13,7 +13,7 @@ from pathlib import Path
 from tkinter import BooleanVar, DoubleVar, IntVar, StringVar, Tk, filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
-from aoi360_pipeline.detectors import DEFAULT_DETECTOR, resolve_default_model_id
+from aoi360_pipeline.detectors import DEFAULT_DETECTOR, SUPPORTED_DETECTORS, resolve_default_model_id
 from aoi360_pipeline.rebuild_runtime_assets import (
     derive_runtime_build_paths,
     find_repo_root,
@@ -133,7 +133,7 @@ class PreprocessGuiApp:
         detector_combobox = ttk.Combobox(
             left_column,
             textvariable=self.detector_var,
-            values=("yolo_world", "grounding_dino"),
+            values=tuple(sorted(SUPPORTED_DETECTORS)),
             state="readonly",
             width=20,
         )

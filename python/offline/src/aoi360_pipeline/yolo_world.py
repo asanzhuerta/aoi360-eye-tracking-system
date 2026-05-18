@@ -7,21 +7,19 @@ import os
 import re
 from collections.abc import Callable
 from pathlib import Path
+from threading import RLock
 
 import pandas as pd
 
+from aoi360_pipeline.cache_roots import get_ultralytics_cache_root as _get_ultralytics_cache_root
 from aoi360_pipeline.detection_contract import DETECTION_COLUMNS, get_frame_index
 from aoi360_pipeline.runtime_environment import inspect_torch_runtime
 
 DEFAULT_MODEL_ID = "yolov8s-worldv2.pt"
 ProgressCallback = Callable[[int, int, str], None]
 LogCallback = Callable[[str], None]
-
-
-def _get_ultralytics_cache_root() -> Path:
-    """Keep YOLO-World caches inside the repo instead of polluting the root."""
-
-    return Path(__file__).resolve().parents[4] / ".cache" / "ultralytics"
+_MODEL_CACHE: dict[str, object] = {}
+_CACHE_LOCK = RLock()
 
 
 def _lazy_import_yolo_world_stack():
@@ -54,6 +52,27 @@ def _resolve_model_reference(model_id: str) -> str:
     cached_model_path = _get_ultralytics_cache_root() / "weights" / model_path.name
     cached_model_path.parent.mkdir(parents=True, exist_ok=True)
     return str(cached_model_path)
+
+
+def _get_cached_model(
+    *,
+    model_builder,
+    resolved_model_reference: str,
+    class_prompts: list[str],
+    log_callback: LogCallback | None,
+):
+    with _CACHE_LOCK:
+        cached_model = _MODEL_CACHE.get(resolved_model_reference)
+
+    if cached_model is None:
+        cached_model = model_builder()
+        with _CACHE_LOCK:
+            cached_model = _MODEL_CACHE.setdefault(resolved_model_reference, cached_model)
+    else:
+        _emit_log(log_callback, f"[detect_yolo_world] Reusing cached model for: {resolved_model_reference}")
+
+    cached_model.set_classes(class_prompts)
+    return cached_model
 
 
 def _emit_log(log_callback: LogCallback | None, message: str) -> None:
@@ -266,7 +285,12 @@ def detect_frames(
     rows: list[dict[str, object]]
     try:
         rows = _collect_detection_rows(
-            model=_build_model(),
+            model=_get_cached_model(
+                model_builder=_build_model,
+                resolved_model_reference=resolved_model_reference,
+                class_prompts=class_prompts,
+                log_callback=log_callback,
+            ),
             frame_paths=frame_paths,
             total_frames=total_frames,
             effective_batch_size=effective_batch_size,
@@ -302,7 +326,12 @@ def detect_frames(
 
         _emit_progress(progress_callback, 0, total_frames, "Retrying YOLO-World with safer CUDA settings.")
         rows = _collect_detection_rows(
-            model=_build_model(),
+            model=_get_cached_model(
+                model_builder=_build_model,
+                resolved_model_reference=resolved_model_reference,
+                class_prompts=class_prompts,
+                log_callback=log_callback,
+            ),
             frame_paths=frame_paths,
             total_frames=total_frames,
             effective_batch_size=1,
@@ -323,6 +352,37 @@ def detect_frames(
     _emit_log(log_callback, f"[detect_yolo_world] Detections exported: {len(detections)}")
     _emit_log(log_callback, f"[detect_yolo_world] CSV written to: {output_csv}")
     return detections
+
+
+def prefetch_model_assets(
+    model_id: str = DEFAULT_MODEL_ID,
+    *,
+    text_prompt: str = "person. face. bottle. screen. product.",
+    log_callback: LogCallback | None = None,
+) -> dict[str, str]:
+    _, _, YOLOWorld = _lazy_import_yolo_world_stack()
+    class_prompts = _parse_open_vocabulary_classes(text_prompt)
+    resolved_model_reference = _resolve_model_reference(model_id)
+
+    _emit_log(log_callback, f"[detect_yolo_world] Prefetching assets into local cache: {_get_ultralytics_cache_root()}")
+
+    def _build_model():
+        built_model = YOLOWorld(resolved_model_reference)
+        built_model.set_classes(class_prompts)
+        return built_model
+
+    _get_cached_model(
+        model_builder=_build_model,
+        resolved_model_reference=resolved_model_reference,
+        class_prompts=class_prompts,
+        log_callback=log_callback,
+    )
+
+    return {
+        "model_id": model_id,
+        "cache_root": str(_get_ultralytics_cache_root()),
+        "model_reference": resolved_model_reference,
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:

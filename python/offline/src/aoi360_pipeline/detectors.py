@@ -15,6 +15,7 @@ DEFAULT_DETECTOR = "yolo_world"
 
 SUPPORTED_DETECTORS: dict[str, str] = {
     "grounding_dino": "Grounding DINO",
+    "owlv2": "OWLv2",
     "yolo_world": "YOLO-World",
 }
 
@@ -57,6 +58,10 @@ def resolve_default_model_id(detector: str) -> str:
         from aoi360_pipeline.yolo_world import DEFAULT_MODEL_ID as yolo_world_model_id
 
         return yolo_world_model_id
+    if detector_key == "owlv2":
+        from aoi360_pipeline.owlv2 import DEFAULT_MODEL_ID as owlv2_model_id
+
+        return owlv2_model_id
 
     raise AssertionError(f"Unexpected detector key: {detector_key}")
 
@@ -106,6 +111,25 @@ def detect_frames_with_backend(
         from aoi360_pipeline.yolo_world import detect_frames as detect_yolo_world_frames
 
         return detect_yolo_world_frames(
+            frames_dir=frames_dir,
+            output_csv=output_csv,
+            text_prompt=text_prompt,
+            box_threshold=box_threshold,
+            text_threshold=text_threshold,
+            model_id=resolved_model_id,
+            batch_size=batch_size,
+            inference_max_width=inference_max_width,
+            inference_max_height=inference_max_height,
+            preload_workers=preload_workers,
+            precision=precision,
+            progress_callback=progress_callback,
+            log_callback=log_callback,
+        )
+
+    if detector_key == "owlv2":
+        from aoi360_pipeline.owlv2 import detect_frames as detect_owlv2_frames
+
+        return detect_owlv2_frames(
             frames_dir=frames_dir,
             output_csv=output_csv,
             text_prompt=text_prompt,

@@ -159,6 +159,15 @@ def _build_runtime_columns(runtime_summary: TorchRuntimeSummary) -> dict[str, ob
     return runtime_columns
 
 
+def _announce_benchmark_step(message: str) -> None:
+    print()
+    separator = "=" * 96
+    print(f"[benchmark_detectors] {separator}")
+    print(f"[benchmark_detectors] {message}")
+    print(f"[benchmark_detectors] {separator}")
+    print()
+
+
 def run_detector_benchmark(
     *,
     frames_dirs: list[str] | None = None,
@@ -177,6 +186,7 @@ def run_detector_benchmark(
     preload_workers: int = 0,
     precision: str = "auto",
     grounding_dino_model_id: str | None = None,
+    owlv2_model_id: str | None = None,
     yolo_world_model_id: str | None = None,
 ) -> dict[str, Path]:
     """Run detector timing experiments and save raw + aggregated reports."""
@@ -210,6 +220,7 @@ def run_detector_benchmark(
     raw_records: list[dict[str, object]] = []
     model_id_overrides = {
         "grounding_dino": grounding_dino_model_id,
+        "owlv2": owlv2_model_id,
         "yolo_world": yolo_world_model_id,
     }
 
@@ -221,6 +232,11 @@ def run_detector_benchmark(
 
                 for warmup_index in range(warmup_runs):
                     warmup_output_path = run_output_dir / f"warmup_{dataset.video_id}_{detector_key}_{warmup_index + 1}.csv"
+                    _announce_benchmark_step(
+                        "Starting warm-up "
+                        f"{warmup_index + 1}/{warmup_runs} for video='{dataset.video_id}', "
+                        f"detector='{detector_name}', model='{model_id}', frames={dataset.frame_count}."
+                    )
                     try:
                         detect_frames_with_backend(
                             detector=detector_key,
@@ -242,6 +258,11 @@ def run_detector_benchmark(
 
                 for repeat_index in range(repeats):
                     run_output_path = run_output_dir / f"run_{dataset.video_id}_{detector_key}_{repeat_index + 1}.csv"
+                    _announce_benchmark_step(
+                        "Starting measured run "
+                        f"{repeat_index + 1}/{repeats} for video='{dataset.video_id}', "
+                        f"detector='{detector_name}', model='{model_id}', frames={dataset.frame_count}."
+                    )
                     start_time = perf_counter()
                     succeeded = False
                     error_message = ""
@@ -368,6 +389,7 @@ def run_detector_benchmark(
             "preload_workers": preload_workers,
             "precision": precision,
             "grounding_dino_model_id": grounding_dino_model_id,
+            "owlv2_model_id": owlv2_model_id,
             "yolo_world_model_id": yolo_world_model_id,
         },
     }
@@ -384,7 +406,7 @@ def run_detector_benchmark(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Benchmark Grounding DINO and YOLO-World over extracted 360-video frames.",
+        description="Benchmark supported open-vocabulary detectors over extracted 360-video frames.",
     )
     parser.add_argument(
         "--frames-dir",
@@ -400,7 +422,7 @@ def build_parser() -> argparse.ArgumentParser:
         dest="detectors",
         action="append",
         choices=sorted(SUPPORTED_DETECTORS),
-        help="Detector backend to benchmark. Repeat to include multiple detectors. Defaults to both.",
+        help="Detector backend to benchmark. Repeat to include multiple detectors. Defaults to every supported detector.",
     )
     parser.add_argument("--output-dir", help="Directory where benchmark reports are written.")
     parser.add_argument("--text-prompt", default=DEFAULT_TEXT_PROMPT)
@@ -436,6 +458,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional override for the Grounding DINO pretrained model id.",
     )
     parser.add_argument(
+        "--owlv2-model-id",
+        default=None,
+        help="Optional override for the OWLv2 pretrained model id.",
+    )
+    parser.add_argument(
         "--yolo-world-model-id",
         default=None,
         help="Optional override for the YOLO-World pretrained model id.",
@@ -463,6 +490,7 @@ def main() -> None:
         preload_workers=args.preload_workers,
         precision=args.precision,
         grounding_dino_model_id=args.grounding_dino_model_id,
+        owlv2_model_id=args.owlv2_model_id,
         yolo_world_model_id=args.yolo_world_model_id,
     )
 
