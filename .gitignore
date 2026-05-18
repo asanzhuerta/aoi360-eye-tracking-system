@@ -36,6 +36,17 @@ MemoryCaptures/
 *.user
 *.userprefs
 
+# LaTeX build artifacts
+docs/latex/*.aux
+docs/latex/*.bbl
+docs/latex/*.blg
+docs/latex/*.fdb_latexmk
+docs/latex/*.fls
+docs/latex/*.log
+docs/latex/*.out
+docs/latex/*.pdf
+docs/latex/*.synctex.gz
+
 # Generated / heavy data
 data/input_videos/*
 data/frames/*
