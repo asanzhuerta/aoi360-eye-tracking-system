@@ -61,6 +61,37 @@ def _emit_progress(
         progress_callback(current, total, message)
 
 
+def _load_pretrained_asset(pretrained_factory, model_id: str, *, log_callback: LogCallback | None = None, **kwargs):
+    """Prefer the local Hugging Face cache, then fall back to remote resolution.
+
+    This keeps repeated preprocessing and benchmarking runs reproducible when
+    the local environment is sandboxed or temporarily offline, while still
+    allowing first-time model downloads on fully connected machines.
+    """
+
+    local_kwargs = dict(kwargs)
+    local_kwargs["local_files_only"] = True
+
+    try:
+        return pretrained_factory.from_pretrained(model_id, **local_kwargs)
+    except Exception as local_exception:
+        _emit_log(
+            log_callback,
+            (
+                "[detect_grounding_dino] Local cache load failed; falling back to remote resolution. "
+                f"Reason: {local_exception}"
+            ),
+        )
+
+    try:
+        return pretrained_factory.from_pretrained(model_id, **kwargs)
+    except Exception as remote_exception:
+        raise RuntimeError(
+            "Grounding DINO could not be loaded from the local cache or from the remote Hugging Face repository. "
+            "If the model was already downloaded before, check that the cache is still available."
+        ) from remote_exception
+
+
 def _post_process_grounding_dino_results(
     processor,
     outputs,
@@ -220,8 +251,13 @@ def detect_frames(
     if device == "cuda" and resolved_precision == "fp16":
         model_kwargs["dtype"] = torch.float16
 
-    processor = AutoProcessor.from_pretrained(model_id)
-    model = AutoModelForZeroShotObjectDetection.from_pretrained(model_id, **model_kwargs).to(device)
+    processor = _load_pretrained_asset(AutoProcessor, model_id, log_callback=log_callback)
+    model = _load_pretrained_asset(
+        AutoModelForZeroShotObjectDetection,
+        model_id,
+        log_callback=log_callback,
+        **model_kwargs,
+    ).to(device)
     model.eval()
 
     frame_paths = sorted([*frames_dir.glob("*.jpg"), *frames_dir.glob("*.jpeg"), *frames_dir.glob("*.png")])

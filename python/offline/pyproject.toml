@@ -26,6 +26,7 @@ aoi360-build-aoi-map = "aoi360_pipeline.aoi_map_builder:main"
 aoi360-build-aoi-sequence = "aoi360_pipeline.aoi_map_sequence_builder:main"
 aoi360-rebuild-runtime-assets = "aoi360_pipeline.rebuild_runtime_assets:main"
 aoi360-preprocess-gui = "aoi360_pipeline.preprocess_gui:main"
+aoi360-benchmark-detectors = "aoi360_pipeline.benchmark_detectors:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

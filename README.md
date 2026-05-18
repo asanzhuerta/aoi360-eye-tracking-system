@@ -2,6 +2,7 @@
 
 Research system for 360 video attention analysis with:
 - offline AOI generation in Python
+- detector benchmarking in Python
 - experimental runtime in Unity
 - post-hoc analytics in Python
 
@@ -134,6 +135,7 @@ The current offline branch supports a simple AOI authoring loop:
 The offline pipeline now also supports:
 
 - detector selection between Grounding DINO and YOLO-World while keeping the same downstream AOI/Unity contract
+- reproducible timing benchmarks for Grounding DINO vs YOLO-World over extracted 360-video frames
 - CUDA-aware preprocessing when a compatible NVIDIA GPU is available
 - automatic preprocessing defaults tuned to the detected runtime (`cpu` or `cuda`)
 - stable AOI identities across sparse keyframes, so the same tracked AOI keeps the same color and id over time
@@ -143,3 +145,22 @@ The offline pipeline now also supports:
 Reference commands and options live in:
 
 - `python/offline/README.md`
+- `experiments/model_benchmark/README.md`
+
+## Post-processing quick start
+
+The analytics package now includes a first post-processing pass for the fixation-based CSV exports produced by Unity.
+
+It can:
+
+- load one or more runtime CSVs
+- normalize and validate the export schema
+- estimate the effective fixation cadence per session
+- summarize session quality and valid-tracking coverage
+- compute AOI-level dwell time, first-fixation timing, and visit counts
+- enrich AOI ids with names/categories from the exported manifests when available
+
+Reference commands and outputs live in:
+
+- `python/analytics/README.md`
+- `docs/unity/manual-test-plan.md`

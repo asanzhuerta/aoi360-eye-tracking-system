@@ -17,6 +17,7 @@ The pipeline now also includes:
 - a master rebuild script that regenerates the runtime assets from scratch
 - a compact Tkinter GUI that lets an operator select a video, launch preprocessing, and monitor progress and logs live
 - detector selection between `grounding_dino` and `yolo_world` while preserving the same detections CSV schema for the AOI builders
+- a detector benchmark entry point so both models can be compared empirically on the same extracted 360-video frames
 - CUDA-aware runtime inspection so the preprocessing stage can report whether it is running on `cpu` or `cuda`
 - runtime-oriented exports with:
   - sparse AOI keyframes every `30` video frames by default
@@ -106,6 +107,22 @@ The GUI lets you:
 - see whether the pipeline is running on `cpu` or `cuda`
 - see the resolved output folders before running anything
 
+### 8. Benchmark Grounding DINO vs YOLO-World
+
+This benchmark measures only the detector stage over already extracted frames, so the comparison stays focused on the AI models instead of mixing in video decoding or AOI export costs.
+
+```bash
+python python/offline/scripts/benchmark_detectors.py --frames-dir data/frames/video_360 --detector grounding_dino --detector yolo_world --repeats 2 --warmup-runs 1 --limit-frames 30
+```
+
+When `--limit-frames` is used, the benchmark now distributes that sample across the full extracted sequence instead of taking only the first N frames.
+
+Outputs:
+
+- raw per-run timings in `data/exports/benchmarks/<timestamp>/detector_benchmark_raw_runs.csv`
+- aggregated detector summary in `data/exports/benchmarks/<timestamp>/detector_benchmark_summary.csv`
+- benchmark metadata and runtime details in `data/exports/benchmarks/<timestamp>/detector_benchmark_metadata.json`
+
 ## Outputs
 
 - Extracted frames: `data/frames/<video_name>/`
@@ -114,6 +131,7 @@ The GUI lets you:
 - AOI keyframes: `data/processed/metadata/`
 - AOI sequence manifest: `data/processed/metadata/<video_name>_aoi_sequence_manifest.json`
 - AOI runtime pack: `data/processed/metadata/<video_name>_aoi_sequence_rgb24.bin`
+- Detector benchmark reports: `data/exports/benchmarks/<timestamp>/`
 
 The rebuild script and GUI now auto-derive these paths from the selected video stem, so a file such as `my_scene.mp4` will produce:
 

@@ -4,7 +4,12 @@ version = "0.1.0"
 description = "Post-hoc analytics for 360 eye tracking AOI metrics"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "pandas",
+]
+
+[project.scripts]
+aoi360-analyze-runtime-exports = "aoi360_analytics.cli:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
