@@ -7,7 +7,6 @@ import os
 import re
 from collections.abc import Callable
 from pathlib import Path
-from threading import RLock
 
 import pandas as pd
 
@@ -18,8 +17,6 @@ from aoi360_pipeline.runtime_environment import inspect_torch_runtime
 DEFAULT_MODEL_ID = "yolov8s-worldv2.pt"
 ProgressCallback = Callable[[int, int, str], None]
 LogCallback = Callable[[str], None]
-_MODEL_CACHE: dict[str, object] = {}
-_CACHE_LOCK = RLock()
 
 
 def _lazy_import_yolo_world_stack():
@@ -52,27 +49,6 @@ def _resolve_model_reference(model_id: str) -> str:
     cached_model_path = _get_ultralytics_cache_root() / "weights" / model_path.name
     cached_model_path.parent.mkdir(parents=True, exist_ok=True)
     return str(cached_model_path)
-
-
-def _get_cached_model(
-    *,
-    model_builder,
-    resolved_model_reference: str,
-    class_prompts: list[str],
-    log_callback: LogCallback | None,
-):
-    with _CACHE_LOCK:
-        cached_model = _MODEL_CACHE.get(resolved_model_reference)
-
-    if cached_model is None:
-        cached_model = model_builder()
-        with _CACHE_LOCK:
-            cached_model = _MODEL_CACHE.setdefault(resolved_model_reference, cached_model)
-    else:
-        _emit_log(log_callback, f"[detect_yolo_world] Reusing cached model for: {resolved_model_reference}")
-
-    cached_model.set_classes(class_prompts)
-    return cached_model
 
 
 def _emit_log(log_callback: LogCallback | None, message: str) -> None:
@@ -285,12 +261,7 @@ def detect_frames(
     rows: list[dict[str, object]]
     try:
         rows = _collect_detection_rows(
-            model=_get_cached_model(
-                model_builder=_build_model,
-                resolved_model_reference=resolved_model_reference,
-                class_prompts=class_prompts,
-                log_callback=log_callback,
-            ),
+            model=_build_model(),
             frame_paths=frame_paths,
             total_frames=total_frames,
             effective_batch_size=effective_batch_size,
@@ -326,12 +297,7 @@ def detect_frames(
 
         _emit_progress(progress_callback, 0, total_frames, "Retrying YOLO-World with safer CUDA settings.")
         rows = _collect_detection_rows(
-            model=_get_cached_model(
-                model_builder=_build_model,
-                resolved_model_reference=resolved_model_reference,
-                class_prompts=class_prompts,
-                log_callback=log_callback,
-            ),
+            model=_build_model(),
             frame_paths=frame_paths,
             total_frames=total_frames,
             effective_batch_size=1,
@@ -371,12 +337,7 @@ def prefetch_model_assets(
         built_model.set_classes(class_prompts)
         return built_model
 
-    _get_cached_model(
-        model_builder=_build_model,
-        resolved_model_reference=resolved_model_reference,
-        class_prompts=class_prompts,
-        log_callback=log_callback,
-    )
+    _build_model()
 
     return {
         "model_id": model_id,
