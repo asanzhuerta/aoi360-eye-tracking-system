@@ -24,6 +24,16 @@ Phase 0 does not yet generate AOIs automatically. AOI maps are still manual or h
 - CSV export with AOI hit information
 - pupil diameters when HTC eye tracker data is available
 
+## Expected headset flow
+
+The current documented Phase 0 flow is:
+
+1. choose a processed stimulus in `Initial_Scene`
+2. load `Phase0_360Playback_VR_sampleRIG`
+3. show a `5 -> 0` countdown while video, AOI metadata, AOI maps, and eye-gaze runtime finish preparing
+4. start the video only after the countdown has completed
+5. export the experiment CSV when the operator ends the session with the right controller `A` button
+
 ## Documents
 
 - `runtime-unity.md` -> current Unity runtime behavior
