@@ -19,7 +19,7 @@ namespace AOI360.Runtime.Experiment
         // always reflects the latest preprocessed stimuli available on disk.
         private static readonly string[] TargetSceneNames = { "Initial_Scene" };
         private const string StimulusManifestSuffix = "_aoi_sequence_manifest.json";
-        private const bool IncludeStreamingAssetsMirror = false;
+        private static readonly bool IncludeStreamingAssetsMirror = false;
 
         private static readonly string[] PlaybackSceneCandidates =
         {
