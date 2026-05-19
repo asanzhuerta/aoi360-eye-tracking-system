@@ -15,6 +15,9 @@ namespace AOI360.Runtime.Logging
 {
     public class DataRecorder : MonoBehaviour
     {
+        // DataRecorder persists the fixation-based contract consumed by the
+        // analytics stage. It records only committed fixation steps so the CSV
+        // remains aligned with the current Phase 0 / Phase 2 runtime design.
         [Header("References")]
         [SerializeField] private VideoPlayback videoPlayback;
         [SerializeField] private SphericalMapper sphericalMapper;
@@ -193,6 +196,8 @@ namespace AOI360.Runtime.Logging
             string fileName = $"{Path.GetFileNameWithoutExtension(outputFileName)}_{timestamp}.csv";
             string filePath = Path.Combine(folderPath, fileName);
 
+            // Export once per session shutdown so the runtime flow can stop safely
+            // without duplicating rows on repeated disable/destroy paths.
             File.WriteAllText(filePath, BuildCsvContent(), Encoding.UTF8);
             LastExportPath = filePath;
             hasExportedCurrentRows = true;

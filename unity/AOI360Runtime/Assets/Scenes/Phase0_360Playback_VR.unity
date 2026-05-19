@@ -591,8 +591,6 @@ MonoBehaviour:
   encodingMode: 0
   autoLoadMetadataFromStreamingAssets: 1
   metadataStreamingFolder: AOIMaps
-  autoLoadMetadataFromResources: 1
-  metadataResourcesFolder: AOIMaps
   grayscaleTolerance: 0.01
   neighborhoodRadiusDegrees: 1.5
   neighborhoodSamples: 8

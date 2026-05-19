@@ -95,12 +95,11 @@ Calibration note:
 
 `AOILookup` resolves AOI hits from the AOI texture using the current UV.
 
-Supported modes:
+Production mode:
 - `MetadataExactColor`
-- `Grayscale8Bit`
-- `LegacyDominantRgb`
 
-For the future pipeline, `MetadataExactColor` is the preferred mode.
+The runtime now treats the manifest-driven exact-color contract as the only
+supported lookup path for the active Phase 0 / Phase 2 flow.
 
 ### AOI sequence loading
 

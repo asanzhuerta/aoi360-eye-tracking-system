@@ -11,10 +11,12 @@ namespace AOI360.Runtime.XR
     [DefaultExecutionOrder(600)]
     public class RuntimeControllerPoseBridge : MonoBehaviour
     {
+        // The bridge recreates controller anchors and pointer rays every time the
+        // active scene changes so the menu scene and the playback scene share one
+        // consistent XR interaction layout.
         private static readonly string[] TargetSceneNames =
         {
             "Initial_Scene",
-            "SampleScene",
             "Phase0_360Playback_VR_sampleRIG"
         };
 

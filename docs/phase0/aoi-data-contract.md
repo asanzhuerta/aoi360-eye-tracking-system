@@ -105,11 +105,8 @@ When the AOI map is used as a data texture in Unity, it should be imported with:
 
 If these settings are not respected, exact color lookup can break.
 
-## Compatibility modes still supported
+## Compatibility note
 
-For debugging and older tests, Unity still supports:
-
-- `Grayscale8Bit`
-- `LegacyDominantRgb`
-
-These are compatibility paths, not the preferred production contract.
+The active runtime path for this phase is the exact-color metadata contract
+described above. Older compatibility encodings were useful during early tests,
+but they are no longer part of the maintained production flow.

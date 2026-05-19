@@ -52,15 +52,12 @@ Build a stable end-to-end prototype with:
 
 ## Current Phase 0 status
 
-The active Unity scene is `Phase0_360Playback_VR`.
+The active Unity scene is `Phase0_360Playback_VR_sampleRIG`.
 
 Phase 0 currently includes:
 - 360 video playback on the skybox
 - AOI overlay rendering from a runtime-generated transparent sphere
-- AOI lookup with support for:
-  - exact-color metadata maps
-  - grayscale 8-bit ID maps
-  - legacy dominant RGB test maps
+- AOI lookup through exact-color metadata maps exported by the offline pipeline
 - fixation detection and commit cadence at `250 ms`
 - visible fixation hit marker plus a capped trail of previous fixations
 - CSV export of fixation events, AOI hits, and pupil diameters when HTC eye tracker data is available

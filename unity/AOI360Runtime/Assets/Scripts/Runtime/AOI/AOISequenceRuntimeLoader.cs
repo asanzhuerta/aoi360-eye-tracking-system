@@ -82,7 +82,6 @@ namespace AOI360.Runtime.AOI
         [Header("StreamingAssets")]
         [SerializeField] private bool autoLoadFromStreamingAssets = true;
         [SerializeField] private string sequenceRootFolder = "AOIMaps/Sequences";
-        [SerializeField] private string legacySequenceRootFolder = "AOIMaps";
         [SerializeField] private string sequenceFolderName = "";
         [SerializeField] private string manifestFileName = "";
 
@@ -302,7 +301,7 @@ namespace AOI360.Runtime.AOI
                 {
                     Debug.Log(
                         $"[AOISequenceRuntimeLoader] No sequence manifest found for '{resolvedSequenceFolder}' " +
-                        $"under '{sequenceRootFolder}' or '{legacySequenceRootFolder}'."
+                        $"under '{sequenceRootFolder}'."
                     );
                 }
 
@@ -764,35 +763,21 @@ namespace AOI360.Runtime.AOI
                 return true;
             }
 
-            string[] candidateRoots =
+            if (!string.IsNullOrWhiteSpace(sequenceRootFolder))
             {
-                sequenceRootFolder,
-                legacySequenceRootFolder
-            };
-
-            for (int i = 0; i < candidateRoots.Length; i++)
-            {
-                string candidateRoot = candidateRoots[i];
-                if (string.IsNullOrWhiteSpace(candidateRoot))
-                {
-                    continue;
-                }
-
                 string candidateBasePath = Path.Combine(
                     Application.streamingAssetsPath,
-                    candidateRoot,
+                    sequenceRootFolder,
                     resolvedSequenceFolder
                 );
                 string candidateManifestPath = Path.Combine(candidateBasePath, resolvedManifestFileName);
 
-                if (!File.Exists(candidateManifestPath))
+                if (File.Exists(candidateManifestPath))
                 {
-                    continue;
+                    resolvedPath = candidateManifestPath;
+                    resolvedBasePath = candidateBasePath;
+                    return true;
                 }
-
-                resolvedPath = candidateManifestPath;
-                resolvedBasePath = candidateBasePath;
-                return true;
             }
 
             resolvedPath = "";

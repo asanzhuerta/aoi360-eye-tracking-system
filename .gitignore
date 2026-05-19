@@ -73,3 +73,5 @@ data/exports/*
 /unity/AOI360Runtime/Assets/StreamingAssets/Videos
 /unity/AOI360Runtime/Assets/StreamingAssets/AOIMaps/Sequences/
 /unity/AOI360Runtime/Assets/StreamingAssets/AOIMaps/Sequences.meta
+.codex_unity_stub.cs
+docs/latex/*.synctex*
