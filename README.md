@@ -192,6 +192,7 @@ It can:
 - aggregate session quality by participant, by video, and by `video x AOI`
 - estimate AOI-to-AOI transition counts from the ordered fixation timeline
 - enrich AOI ids with names/categories from the exported manifests when available
+- reapply two different AOI-manifest roots over the same runtime CSVs so manual and automatic AOIs can be compared without repeating the Unity session
 
 Reference commands and outputs live in:
 

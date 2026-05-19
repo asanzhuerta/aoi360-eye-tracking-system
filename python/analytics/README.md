@@ -21,6 +21,7 @@ It currently supports:
 7. aggregating quality and AOI engagement metrics by participant, by video, and by `video x AOI`
 8. estimating AOI-to-AOI transition counts from the ordered fixation timeline
 9. enriching AOI ids with names/categories from the AOI sequence manifests when they are available
+10. reapplying two different AOI-manifest roots over the same Unity runtime logs in order to compare `manual vs automatic` AOI assignments without re-recording the session
 
 ## Phase 3 manual: installation
 
@@ -52,6 +53,18 @@ Analyze explicit CSV files:
 python python/analytics/scripts/analyze_runtime_exports.py --input-csv data/exports/session_01.csv --input-csv data/exports/session_02.csv
 ```
 
+Compare one set of runtime CSVs against two AOI sources:
+
+```bash
+python python/analytics/scripts/compare_runtime_aoi_sources.py \
+  --input-dir data/exports \
+  --manual-manifest-root data/manual_gt/metadata \
+  --automatic-manifest-root data/processed/metadata \
+  --match-field aoi_category
+```
+
+For a quick self-check of the comparison pipeline before the manual package is frozen, both roots can temporarily point to the same manifest folder. In that case, the session-alignment and confusion outputs should converge toward perfect agreement.
+
 ## Outputs
 
 The analytics script writes one timestamped folder under `data/exports/analytics/` with:
@@ -66,6 +79,19 @@ The analytics script writes one timestamped folder under `data/exports/analytics
 - `runtime_video_aoi_summary.csv`
 - `runtime_transition_summary.csv`
 - `runtime_summary_snapshot.json`
+
+The comparison script writes one timestamped folder under `data/exports/analytics/source_comparison/` with:
+
+- `manual/` -> the full analytics export for the manual AOI source
+- `automatic/` -> the full analytics export for the automatic AOI source
+- `comparison_rows_reassigned.csv`
+- `comparison_session_alignment.csv`
+- `comparison_category_confusion.csv`
+- `comparison_match_field_confusion.csv`
+- `manual_video_match_summary.csv`
+- `automatic_video_match_summary.csv`
+- `comparison_video_match_deltas.csv`
+- `comparison_summary_snapshot.json`
 
 ## Metric notes
 
@@ -94,5 +120,24 @@ The `runtime_video_aoi_summary.csv` table is the main comparative table for the 
 - it aggregates AOI engagement by `video_id` and `aoi_id`
 - it reports how often each AOI appears across runs
 - it keeps normalized dwell / visit / first-fixation metrics that can later be compared between manual and automatic AOIs
+
+The comparison layer reuses the same runtime rows and recomputes AOI ids from two manifest bundles:
+
+- one bundle is treated as the `manual` reference source
+- one bundle is treated as the `automatic` source under evaluation
+- both bundles are applied to the same `video_id`, `frame_index`, and `uv` timeline exported by Unity
+
+This lets the project answer the downstream methodological question directly: whether changing the AOI source changes the gaze metrics that would later be interpreted in the study.
+
+The semantic comparison key is configurable through `--match-field`:
+
+- `aoi_category` is the safest default when manual and automatic AOI ids are not directly aligned
+- `aoi_name` is useful when both pipelines share a stable AOI naming convention
+- `aoi_id` is only meaningful when both sources intentionally reuse the same numeric AOI ids
+
+The comparison pipeline supports two AOI-frame backends:
+
+- the packed RGB24 runtime blob, which matches the Unity runtime path
+- per-frame PNG ID maps as a fallback, which keeps the workflow compatible with future manual annotations that have not been packed yet
 
 This is the starting point for the post-processing phase, not the final analytics model. It is designed to be stable enough to test the end-to-end workflow as soon as real Unity exports are available, while already exposing the main descriptive tables needed to evaluate session quality, AOI engagement, and navigation patterns.

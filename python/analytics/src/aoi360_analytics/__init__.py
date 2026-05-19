@@ -3,6 +3,7 @@ from aoi360_analytics.runtime_exports import (
     RUNTIME_REQUIRED_COLUMNS,
     RuntimeAnalyticsResult,
     analyze_runtime_exports,
+    analyze_runtime_rows,
     build_aoi_summary,
     build_participant_summary,
     build_session_summary,
@@ -16,12 +17,21 @@ from aoi360_analytics.runtime_exports import (
     load_manifest_index,
     load_runtime_csvs,
 )
+from aoi360_analytics.source_comparison import (
+    DEFAULT_COMPARISON_MATCH_FIELD,
+    RuntimeSourceComparisonResult,
+    compare_runtime_aoi_sources,
+    export_runtime_source_comparison,
+    load_aoi_source_bundle,
+    reassign_runtime_rows_from_bundle,
+)
 
 __all__ = [
     "DEFAULT_FIXATION_STEP_MS",
     "RUNTIME_REQUIRED_COLUMNS",
     "RuntimeAnalyticsResult",
     "analyze_runtime_exports",
+    "analyze_runtime_rows",
     "build_aoi_summary",
     "build_participant_summary",
     "build_session_summary",
@@ -34,4 +44,10 @@ __all__ = [
     "export_runtime_analytics",
     "load_manifest_index",
     "load_runtime_csvs",
+    "DEFAULT_COMPARISON_MATCH_FIELD",
+    "RuntimeSourceComparisonResult",
+    "compare_runtime_aoi_sources",
+    "export_runtime_source_comparison",
+    "load_aoi_source_bundle",
+    "reassign_runtime_rows_from_bundle",
 ]

@@ -1170,6 +1170,17 @@ def analyze_runtime_exports(
 
     csv_paths = discover_runtime_csv_paths(input_csvs=input_csvs, input_dir=input_dir)
     raw_rows = load_runtime_csvs(csv_paths)
+    return analyze_runtime_rows(raw_rows, manifest_root=manifest_root)
+
+
+def analyze_runtime_rows(
+    runtime_rows: pd.DataFrame,
+    *,
+    manifest_root: str | Path | None = None,
+) -> RuntimeAnalyticsResult:
+    """Run the Phase 3 analytics stack over already loaded runtime rows."""
+
+    raw_rows = runtime_rows.copy()
     session_summary = build_session_summary(raw_rows)
     session_quality = build_session_quality_report(raw_rows, session_summary)
     source_file_summary = build_source_file_summary(raw_rows, session_quality)
