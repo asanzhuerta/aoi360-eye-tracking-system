@@ -11,6 +11,16 @@ Its purpose is to validate the runtime experiment loop before the offline AOI ge
 - visualize fixations in the headset
 - export fixation-based CSV data
 
+## Phase mapping
+
+This folder keeps the original prototype naming, but in the current project plan it corresponds to:
+
+- `Phase 2` -> Unity runtime playback, gaze capture, AOI lookup, and CSV export
+
+The active runtime scene still uses the historical name:
+
+- `Phase0_360Playback_VR_sampleRIG`
+
 ## Scope
 
 Phase 0 does not yet generate AOIs automatically. AOI maps are still manual or handcrafted test assets, but the runtime contract is already structured so the future Python pipeline can drop in generated maps and metadata without rewriting the Unity side.
@@ -24,6 +34,37 @@ Phase 0 does not yet generate AOIs automatically. AOI maps are still manual or h
 - CSV export with AOI hit information
 - pupil diameters when HTC eye tracker data is available
 
+## Phase 2 manual: installation
+
+Minimum local setup:
+
+1. Open the Unity project under `unity/AOI360Runtime/`.
+2. Use the current project baseline:
+   - Unity `6000.3.11f1`
+   - URP enabled
+   - `com.unity.xr.openxr` `1.16.1`
+   - `com.unity.xr.management` `4.5.4`
+   - HTC VIVE OpenXR package `2.5.0`
+3. Make sure the repository data layout exists:
+   - `data/input_videos/`
+   - `data/processed/id_maps/<video_name>/`
+   - `data/processed/metadata/<video_name>_aoi_sequence_manifest.json`
+
+The editor workflow currently prioritizes repository-backed data. `StreamingAssets` remains the packaging path for later builds, but it is no longer the main day-to-day authoring path.
+
+## Phase 2 manual: execution
+
+Recommended runtime flow in the Editor:
+
+1. Open `Initial_Scene`.
+2. Enter Play mode.
+3. Select one processed stimulus from the runtime UI.
+4. Let the countdown finish while video and AOI data prepare.
+5. Run the headset test and end the experiment with the configured controller binding.
+6. Check the exported CSV under `data/exports/csv/`.
+
+If the runtime cannot resolve the repository root, the CSV exporter falls back to `Application.persistentDataPath/Exports`. That fallback is mainly for packaged builds or unusual folder layouts.
+
 ## Expected headset flow
 
 The current documented Phase 0 flow is:
@@ -33,6 +74,10 @@ The current documented Phase 0 flow is:
 3. show a `5 -> 0` countdown while video, AOI metadata, AOI maps, and eye-gaze runtime finish preparing
 4. start the video only after the countdown has completed
 5. export the experiment CSV when the operator ends the session with the right controller `A` button
+
+## Build note
+
+The current Unity implementation can be built, but it will only behave the same as the editor workflow if the build also receives the required video and AOI assets through the mirrored `StreamingAssets` layout. The repository-backed discovery path is the reference workflow used during development.
 
 ## Documents
 

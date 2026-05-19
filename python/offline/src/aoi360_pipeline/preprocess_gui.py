@@ -5,6 +5,7 @@ Tk widgets must be updated on the main thread, so the pipeline runs in a worker
 thread and reports progress back through a queue.
 """
 
+import json
 import queue
 import threading
 import traceback
@@ -25,6 +26,8 @@ from aoi360_pipeline.runtime_environment import inspect_torch_runtime
 class PreprocessGuiApp:
     """Thin presentation layer over the rebuild pipeline."""
 
+    DEFAULT_PROMPT = "person. face. bottle. screen. product."
+    PROMPT_PRESET_PATH = Path("data") / "promts" / "5videosPromt.json"
     STAGE_ORDER = ("extract", "detect", "build")
     STAGE_WEIGHTS = {
         "extract": 0.2,
@@ -38,6 +41,8 @@ class PreprocessGuiApp:
         self.event_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self.worker_thread: threading.Thread | None = None
         self.runtime_summary = inspect_torch_runtime()
+        self.prompt_presets = self._load_prompt_presets()
+        self.last_auto_applied_prompt: str | None = None
 
         self.root = Tk()
         self.root.title("AOI360 Offline Preprocessing")
@@ -50,7 +55,7 @@ class PreprocessGuiApp:
 
         default_video_path = self.repo_root / "data" / "input_videos" / "video_360.mp4"
         self.video_path_var = StringVar(value=str(default_video_path))
-        self.text_prompt_var = StringVar(value="person. face. bottle. screen. product.")
+        self.text_prompt_var = StringVar(value=self.DEFAULT_PROMPT)
         self.detector_var = StringVar(value=DEFAULT_DETECTOR)
         self.detection_model_id_var = StringVar(value=resolve_default_model_id(DEFAULT_DETECTOR))
         self.include_labels_var = StringVar(value="")
@@ -86,10 +91,69 @@ class PreprocessGuiApp:
         self.start_button: ttk.Button | None = None
 
         self._build_ui()
-        self._refresh_output_paths()
-        self.video_path_var.trace_add("write", lambda *_: self._refresh_output_paths())
+        self._handle_video_path_changed(force_prompt_refresh=True)
+        self.video_path_var.trace_add("write", lambda *_: self._handle_video_path_changed())
         self.detector_var.trace_add("write", lambda *_: self._handle_detector_changed())
         self.root.after(self.POLL_INTERVAL_MS, self._process_worker_events)
+
+    def _load_prompt_presets(self) -> dict[str, str]:
+        prompt_file = self.repo_root / self.PROMPT_PRESET_PATH
+        if not prompt_file.exists():
+            return {}
+
+        try:
+            loaded_mapping = json.loads(prompt_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+        if not isinstance(loaded_mapping, dict):
+            return {}
+
+        resolved_mapping: dict[str, str] = {}
+        for video_stem, prompt in loaded_mapping.items():
+            if not isinstance(video_stem, str) or not isinstance(prompt, str):
+                continue
+
+            normalized_stem = video_stem.strip().lower()
+            normalized_prompt = prompt.strip()
+            if not normalized_stem or not normalized_prompt:
+                continue
+
+            resolved_mapping[normalized_stem] = normalized_prompt
+
+        return resolved_mapping
+
+    def _handle_video_path_changed(self, force_prompt_refresh: bool = False) -> None:
+        self._maybe_apply_prompt_preset(force=force_prompt_refresh)
+        self._refresh_output_paths()
+
+    def _maybe_apply_prompt_preset(self, *, force: bool = False) -> None:
+        video_path = self.video_path_var.get().strip()
+        if not video_path:
+            return
+
+        video_stem = Path(video_path).stem.strip().lower()
+        if not video_stem:
+            return
+
+        preset_prompt = self.prompt_presets.get(video_stem)
+        if not preset_prompt:
+            return
+
+        current_prompt = self.text_prompt_var.get().strip()
+        can_replace_prompt = (
+            force
+            or not current_prompt
+            or current_prompt == self.DEFAULT_PROMPT
+            or current_prompt == self.last_auto_applied_prompt
+        )
+        if not can_replace_prompt or current_prompt == preset_prompt:
+            return
+
+        # Only auto-apply prompts while the field is still in a default or
+        # previously auto-filled state, so a manual operator override is kept.
+        self.text_prompt_var.set(preset_prompt)
+        self.last_auto_applied_prompt = preset_prompt
 
     def _build_ui(self) -> None:
         self.root.columnconfigure(0, weight=1)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 The goal of this module is to make detector timing comparisons reproducible.
 It measures only the detection stage, not frame extraction or AOI rendering,
-so the results remain focused on the two open-vocabulary backends.
+so the results remain focused on the supported open-vocabulary backends.
 """
 
 import argparse
@@ -39,6 +39,52 @@ class BenchmarkDataset:
     prepared_frames_dir: Path
     frame_count: int
     temp_dir_to_cleanup: Path | None = None
+
+
+def parse_video_prompt_overrides(
+    *,
+    prompt_overrides: list[str] | None = None,
+    prompt_file: str | Path | None = None,
+) -> dict[str, str]:
+    """Resolve per-video prompt overrides from CLI pairs and/or a JSON file."""
+
+    resolved_overrides: dict[str, str] = {}
+
+    if prompt_file is not None:
+        prompt_file_path = Path(prompt_file).resolve()
+        if not prompt_file_path.exists():
+            raise FileNotFoundError(f"Video prompt mapping file not found: {prompt_file_path}")
+
+        loaded_mapping = json.loads(prompt_file_path.read_text(encoding="utf-8"))
+        if not isinstance(loaded_mapping, dict):
+            raise ValueError("The video prompt mapping file must contain a JSON object of video_id -> prompt.")
+
+        for video_id, prompt in loaded_mapping.items():
+            if not isinstance(video_id, str) or not isinstance(prompt, str):
+                raise ValueError("Every video prompt mapping entry must be a string key and a string value.")
+            normalized_video_id = video_id.strip()
+            normalized_prompt = prompt.strip()
+            if not normalized_video_id:
+                raise ValueError("Video prompt mapping keys cannot be empty.")
+            if not normalized_prompt:
+                raise ValueError(f"Prompt override for '{normalized_video_id}' cannot be empty.")
+            resolved_overrides[normalized_video_id] = normalized_prompt
+
+    for override in prompt_overrides or []:
+        if "=" not in override:
+            raise ValueError(
+                "Each --video-prompt override must follow the format video_id=prompt."
+            )
+        video_id, prompt = override.split("=", 1)
+        normalized_video_id = video_id.strip()
+        normalized_prompt = prompt.strip()
+        if not normalized_video_id:
+            raise ValueError("Video id cannot be empty in --video-prompt overrides.")
+        if not normalized_prompt:
+            raise ValueError(f"Prompt override for '{normalized_video_id}' cannot be empty.")
+        resolved_overrides[normalized_video_id] = normalized_prompt
+
+    return resolved_overrides
 
 
 def discover_frames_directories(
@@ -168,12 +214,20 @@ def _announce_benchmark_step(message: str) -> None:
     print()
 
 
+def _format_prompt_for_log(prompt: str, *, max_length: int = 96) -> str:
+    normalized_prompt = " ".join(prompt.split())
+    if len(normalized_prompt) <= max_length:
+        return normalized_prompt
+    return normalized_prompt[: max_length - 3] + "..."
+
+
 def run_detector_benchmark(
     *,
     frames_dirs: list[str] | None = None,
     detectors: list[str] | None = None,
     output_dir: str | Path | None = None,
     text_prompt: str = DEFAULT_TEXT_PROMPT,
+    video_prompt_overrides: dict[str, str] | None = None,
     repeats: int = 1,
     warmup_runs: int = 0,
     sample_every_n_frames: int = 1,
@@ -226,6 +280,7 @@ def run_detector_benchmark(
 
     try:
         for dataset in prepared_datasets:
+            resolved_text_prompt = (video_prompt_overrides or {}).get(dataset.video_id, text_prompt)
             for detector_key in detector_keys:
                 detector_name = detector_display_name(detector_key)
                 model_id = model_id_overrides.get(detector_key) or resolve_default_model_id(detector_key)
@@ -235,14 +290,15 @@ def run_detector_benchmark(
                     _announce_benchmark_step(
                         "Starting warm-up "
                         f"{warmup_index + 1}/{warmup_runs} for video='{dataset.video_id}', "
-                        f"detector='{detector_name}', model='{model_id}', frames={dataset.frame_count}."
+                        f"detector='{detector_name}', model='{model_id}', frames={dataset.frame_count}, "
+                        f"prompt='{_format_prompt_for_log(resolved_text_prompt)}'."
                     )
                     try:
                         detect_frames_with_backend(
                             detector=detector_key,
                             frames_dir=dataset.prepared_frames_dir,
                             output_csv=warmup_output_path,
-                            text_prompt=text_prompt,
+                            text_prompt=resolved_text_prompt,
                             box_threshold=box_threshold,
                             text_threshold=text_threshold,
                             model_id=model_id,
@@ -261,7 +317,8 @@ def run_detector_benchmark(
                     _announce_benchmark_step(
                         "Starting measured run "
                         f"{repeat_index + 1}/{repeats} for video='{dataset.video_id}', "
-                        f"detector='{detector_name}', model='{model_id}', frames={dataset.frame_count}."
+                        f"detector='{detector_name}', model='{model_id}', frames={dataset.frame_count}, "
+                        f"prompt='{_format_prompt_for_log(resolved_text_prompt)}'."
                     )
                     start_time = perf_counter()
                     succeeded = False
@@ -273,7 +330,7 @@ def run_detector_benchmark(
                             detector=detector_key,
                             frames_dir=dataset.prepared_frames_dir,
                             output_csv=run_output_path,
-                            text_prompt=text_prompt,
+                            text_prompt=resolved_text_prompt,
                             box_threshold=box_threshold,
                             text_threshold=text_threshold,
                             model_id=model_id,
@@ -309,7 +366,7 @@ def run_detector_benchmark(
                             "detections_per_frame": (detections_count / dataset.frame_count),
                             "success": succeeded,
                             "error_message": error_message,
-                            "text_prompt": text_prompt,
+                            "text_prompt": resolved_text_prompt,
                             "box_threshold": box_threshold,
                             "text_threshold": text_threshold,
                             "batch_size": batch_size,
@@ -336,6 +393,7 @@ def run_detector_benchmark(
                 "detector",
                 "detector_name",
                 "model_id",
+                "text_prompt",
                 "run_count",
                 "frame_count",
                 "duration_seconds_mean",
@@ -352,7 +410,7 @@ def run_detector_benchmark(
     else:
         summary_results = (
             successful_runs
-            .groupby(["video_id", "detector", "detector_name", "model_id", "frame_count"], as_index=False)
+            .groupby(["video_id", "detector", "detector_name", "model_id", "text_prompt", "frame_count"], as_index=False)
             .agg(
                 run_count=("repeat_index", "count"),
                 duration_seconds_mean=("duration_seconds", "mean"),
@@ -377,6 +435,7 @@ def run_detector_benchmark(
             "frames_dirs": frames_dirs,
             "detectors": detector_keys,
             "text_prompt": text_prompt,
+            "video_prompt_overrides": video_prompt_overrides or {},
             "repeats": repeats,
             "warmup_runs": warmup_runs,
             "sample_every_n_frames": sample_every_n_frames,
@@ -426,6 +485,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--output-dir", help="Directory where benchmark reports are written.")
     parser.add_argument("--text-prompt", default=DEFAULT_TEXT_PROMPT)
+    parser.add_argument(
+        "--video-prompt",
+        dest="video_prompts",
+        action="append",
+        help=(
+            "Optional per-video prompt override using the format video_id=prompt. "
+            "Repeat the option to define multiple overrides."
+        ),
+    )
+    parser.add_argument(
+        "--video-prompt-file",
+        default=None,
+        help="Optional JSON file containing a mapping of video_id to text prompt.",
+    )
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument(
         "--warmup-runs",
@@ -473,11 +546,16 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    video_prompt_overrides = parse_video_prompt_overrides(
+        prompt_overrides=args.video_prompts,
+        prompt_file=args.video_prompt_file,
+    )
     result_paths = run_detector_benchmark(
         frames_dirs=args.frames_dirs,
         detectors=args.detectors,
         output_dir=args.output_dir,
         text_prompt=args.text_prompt,
+        video_prompt_overrides=video_prompt_overrides,
         repeats=args.repeats,
         warmup_runs=args.warmup_runs,
         sample_every_n_frames=args.sample_every_n_frames,

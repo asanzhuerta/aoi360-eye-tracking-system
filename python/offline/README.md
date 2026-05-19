@@ -26,7 +26,7 @@ The pipeline now also includes:
   - a binary `RGB24` runtime pack so Unity can avoid decoding PNG keyframes during playback
 - stable AOI identities across sparse keyframes, so one tracked AOI keeps the same color and id over the exported sequence
 
-## Install
+## Phase 1 manual: installation
 
 Recommended:
 
@@ -50,6 +50,15 @@ Note:
 
 - The first YOLO-World run downloads the pretrained weights and the CLIP text encoder cache.
 - After that warm-up, repeated runs reuse the cached artifacts.
+
+## Phase 1 manual: execution
+
+Recommended entry points:
+
+- CLI rebuild: `python python/offline/scripts/rebuild_runtime_assets.py --video-path data/input_videos/video_360.mp4 --clean`
+- GUI launcher: `Launch_AOI360_Preprocess_GUI.bat`
+
+The GUI launcher opens the same preprocessing pipeline documented below, but with a desktop window and live logs.
 
 ## Scripts
 
@@ -106,6 +115,13 @@ The GUI lets you:
 - follow stage progress and useful logs in real time
 - see whether the pipeline is running on `cpu` or `cuda`
 - see the resolved output folders before running anything
+- auto-fill the prompt when the selected video stem matches an entry in `data/promts/5videosPromt.json`
+
+If you want a root-level launcher instead of calling Python manually, use:
+
+```bash
+Launch_AOI360_Preprocess_GUI.bat
+```
 
 ### 8. Benchmark Grounding DINO vs YOLO-World
 
@@ -184,3 +200,14 @@ Copy-Item data\processed\metadata\video_360_aoi_sequence_rgb24.bin unity\AOI360R
 ```
 
 That per-frame layout is now consumed by the current Unity runtime loader keyed by `VideoPlayer.frame`, and the binary runtime pack is the preferred fast path for Phase 0 playback tests on standalone VR hardware.
+
+## Prompt presets
+
+The repository now keeps a simple per-video prompt mapping file in:
+
+- `data/promts/5videosPromt.json`
+
+This mapping is used in two places:
+
+- the benchmark script through `--video-prompt` / `--video-prompt-file`
+- the preprocessing GUI, which auto-loads the matching prompt when the selected video stem is present in that JSON

@@ -8,6 +8,7 @@ namespace AOI360.Runtime.Experiment
     public static class ExperimentStimulusCatalog
     {
         private const string ManifestSuffix = "_aoi_sequence_manifest.json";
+        private static readonly string[] PreferredVideoExtensions = { ".mp4", ".mov", ".webm", ".mkv" };
 
         public static List<ExperimentStimulusDefinition> DiscoverAvailableStimuli()
         {
@@ -180,6 +181,19 @@ namespace AOI360.Runtime.Experiment
             if (string.IsNullOrWhiteSpace(videosRoot) || !Directory.Exists(videosRoot))
             {
                 return false;
+            }
+
+            for (int i = 0; i < PreferredVideoExtensions.Length; i++)
+            {
+                string preferredPath = Path.Combine(videosRoot, sequenceName + PreferredVideoExtensions[i]);
+                if (!File.Exists(preferredPath))
+                {
+                    continue;
+                }
+
+                videoAbsolutePath = preferredPath;
+                videoFileName = Path.GetFileName(preferredPath);
+                return true;
             }
 
             string[] matches = Directory.GetFiles(videosRoot, sequenceName + ".*", SearchOption.TopDirectoryOnly);

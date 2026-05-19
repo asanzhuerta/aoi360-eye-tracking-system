@@ -74,4 +74,5 @@ data/exports/*
 /unity/AOI360Runtime/Assets/StreamingAssets/AOIMaps/Sequences/
 /unity/AOI360Runtime/Assets/StreamingAssets/AOIMaps/Sequences.meta
 .codex_unity_stub.cs
+vlc-help.txt
 docs/latex/*.synctex*

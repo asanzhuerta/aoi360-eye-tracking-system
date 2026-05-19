@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using AOI360.Runtime.Experiment;
 using AOI360.Runtime.Mapping;
@@ -7,6 +8,7 @@ using UnityEngine.Video;
 
 namespace AOI360.Runtime.Video
 {
+    [DefaultExecutionOrder(-210)]
     [RequireComponent(typeof(VideoPlayer))]
     public class VideoPlayback : MonoBehaviour
     {
@@ -18,6 +20,7 @@ namespace AOI360.Runtime.Video
         private const string MirrorOnBackKeyword = "_MIRRORONBACK_ON";
         private const string RuntimeVideoSphereName = "Runtime360VideoSphere";
         private const float RuntimeVideoSphereRadius = 5f;
+        private static readonly string[] UnityPreferredVideoExtensions = { ".mp4", ".mov", ".webm", ".mkv" };
 
         [Header("Video")]
         [SerializeField] private string videoFileName = "sample360.mp4";
@@ -34,6 +37,8 @@ namespace AOI360.Runtime.Video
         [SerializeField] private int runtimeTextureHeight = 2048;
         [SerializeField] private bool forceSkyboxOutput = true;
         [SerializeField] private bool useImmersiveSphereOutput = true;
+        [SerializeField] private bool followPresentationCameraPosition = true;
+        [SerializeField] private bool normalizeProjectionToTwoToOne = true;
 
         [Header("Debug")]
         [SerializeField] private bool logVideoEvents = true;
@@ -54,12 +59,18 @@ namespace AOI360.Runtime.Video
         private bool hasReachedPlaybackEnd;
         private SphericalMapper sphericalMapper;
         private Transform sphereCenter;
+        private Camera presentationCamera;
         private GameObject runtimeVideoSphere;
         private Material runtimeVideoSphereMaterial;
         private float lastYawOffsetDegrees = float.NaN;
         private float lastVerticalOffsetDegrees = float.NaN;
         private bool? lastHorizontalFlip;
         private bool? lastVerticalFlip;
+        private Vector2 projectionScale = Vector2.one;
+        private Vector2 projectionOffset = Vector2.zero;
+        private Vector2 lastProjectionScale = new Vector2(float.NaN, float.NaN);
+        private Vector2 lastProjectionOffset = new Vector2(float.NaN, float.NaN);
+        private bool hasRetriedWithAlternativePath;
 
         public bool IsPrepared => isPrepared;
         public bool HasPreparationStarted => hasPreparationStarted;
@@ -72,6 +83,8 @@ namespace AOI360.Runtime.Video
         public double CurrentTime => videoPlayer != null ? videoPlayer.time : 0d;
         public bool IsPlaying => videoPlayer != null && videoPlayer.isPlaying;
         public bool HasReachedPlaybackEnd => hasReachedPlaybackEnd;
+        public Vector2 ProjectionScale => projectionScale;
+        public Vector2 ProjectionOffset => projectionOffset;
 
         private void Awake()
         {
@@ -99,6 +112,7 @@ namespace AOI360.Runtime.Video
             videoPlayer.loopPointReached += HandleLoopPointReached;
 
             ClearOutputToBlack();
+            SyncSphereCenterToPresentationCamera();
             ApplySkyboxOutput();
             EnsureImmersiveSphereOutput();
             SetImmersiveSphereVisible(false);
@@ -130,6 +144,8 @@ namespace AOI360.Runtime.Video
 
         private void Update()
         {
+            SyncSphereCenterToPresentationCamera();
+
             if (!useImmersiveSphereOutput)
             {
                 return;
@@ -258,7 +274,7 @@ namespace AOI360.Runtime.Video
 
             if (skyboxMaterial.HasProperty("_Rotation"))
             {
-                skyboxMaterial.SetFloat("_Rotation", 0f);
+                skyboxMaterial.SetFloat("_Rotation", sphericalMapper != null ? sphericalMapper.YawOffsetDegrees : 0f);
             }
 
             ForceLatitudeLongitudeLayout();
@@ -283,6 +299,11 @@ namespace AOI360.Runtime.Video
             {
                 GameObject center = GameObject.Find("SphereCenter");
                 sphereCenter = center != null ? center.transform : null;
+            }
+
+            if (presentationCamera == null)
+            {
+                presentationCamera = Camera.main ?? FindFirstObjectByType<Camera>();
             }
         }
 
@@ -399,6 +420,17 @@ namespace AOI360.Runtime.Video
             runtimeVideoSphereMaterial.SetFloat("_VerticalOffsetDegrees", sphericalMapper != null ? sphericalMapper.VerticalOffsetDegrees : 0f);
             runtimeVideoSphereMaterial.SetFloat("_FlipHorizontal", sphericalMapper != null && sphericalMapper.FlipHorizontally ? 1f : 0f);
             runtimeVideoSphereMaterial.SetFloat("_FlipVertical", sphericalMapper != null && sphericalMapper.FlipVertically ? 1f : 0f);
+
+            if (runtimeVideoSphereMaterial.HasProperty("_ProjectionScale"))
+            {
+                runtimeVideoSphereMaterial.SetVector("_ProjectionScale", new Vector4(projectionScale.x, projectionScale.y, 0f, 0f));
+            }
+
+            if (runtimeVideoSphereMaterial.HasProperty("_ProjectionOffset"))
+            {
+                runtimeVideoSphereMaterial.SetVector("_ProjectionOffset", new Vector4(projectionOffset.x, projectionOffset.y, 0f, 0f));
+            }
+
             CacheImmersiveProjectionState();
         }
 
@@ -406,11 +438,16 @@ namespace AOI360.Runtime.Video
         {
             if (sphericalMapper == null)
             {
-                return lastHorizontalFlip.HasValue || lastVerticalFlip.HasValue;
+                return lastHorizontalFlip.HasValue ||
+                       lastVerticalFlip.HasValue ||
+                       !VectorsApproximatelyEqual(lastProjectionScale, projectionScale) ||
+                       !VectorsApproximatelyEqual(lastProjectionOffset, projectionOffset);
             }
 
             return !Mathf.Approximately(lastYawOffsetDegrees, sphericalMapper.YawOffsetDegrees) ||
                    !Mathf.Approximately(lastVerticalOffsetDegrees, sphericalMapper.VerticalOffsetDegrees) ||
+                   !VectorsApproximatelyEqual(lastProjectionScale, projectionScale) ||
+                   !VectorsApproximatelyEqual(lastProjectionOffset, projectionOffset) ||
                    lastHorizontalFlip != sphericalMapper.FlipHorizontally ||
                    lastVerticalFlip != sphericalMapper.FlipVertically;
         }
@@ -423,6 +460,8 @@ namespace AOI360.Runtime.Video
                 lastVerticalOffsetDegrees = 0f;
                 lastHorizontalFlip = false;
                 lastVerticalFlip = false;
+                lastProjectionScale = projectionScale;
+                lastProjectionOffset = projectionOffset;
                 return;
             }
 
@@ -430,15 +469,20 @@ namespace AOI360.Runtime.Video
             lastVerticalOffsetDegrees = sphericalMapper.VerticalOffsetDegrees;
             lastHorizontalFlip = sphericalMapper.FlipHorizontally;
             lastVerticalFlip = sphericalMapper.FlipVertically;
+            lastProjectionScale = projectionScale;
+            lastProjectionOffset = projectionOffset;
         }
 
         private void HandlePrepareCompleted(VideoPlayer source)
         {
             isPrepared = true;
             hasPreparationFailed = false;
+            hasRetriedWithAlternativePath = false;
             lastPrepareErrorMessage = string.Empty;
             hasReachedPlaybackEnd = false;
+            UpdateProjectionNormalization((int)source.width, (int)source.height);
             ApplySkyboxOutput();
+            RefreshImmersiveSphereMaterial(forceRefresh: true);
 
             if (logVideoEvents)
             {
@@ -458,8 +502,20 @@ namespace AOI360.Runtime.Video
 
         private void HandleErrorReceived(VideoPlayer source, string message)
         {
+            if (TryRetryWithAlternativePath(source))
+            {
+                return;
+            }
+
             hasPreparationFailed = true;
             lastPrepareErrorMessage = string.IsNullOrWhiteSpace(message) ? "Unknown video error." : message;
+            if (string.Equals(Path.GetExtension(activeVideoPath), ".mkv", StringComparison.OrdinalIgnoreCase))
+            {
+                lastPrepareErrorMessage +=
+                    " Unity VideoPlayer no pudo abrir este .mkv en esta máquina. " +
+                    "Añade un archivo con el mismo nombre base en .mp4/.mov/.webm o transcodifica el estímulo.";
+            }
+
             playRequestedBeforePrepare = false;
             Debug.LogError($"[VideoPlayback] Video error: {lastPrepareErrorMessage}");
         }
@@ -513,14 +569,11 @@ namespace AOI360.Runtime.Video
 
         private string ResolveVideoPath()
         {
-            if (!string.IsNullOrWhiteSpace(runtimeSelectedVideoPath))
-            {
-                return runtimeSelectedVideoPath;
-            }
+            string requestedPath = !string.IsNullOrWhiteSpace(runtimeSelectedVideoPath)
+                ? runtimeSelectedVideoPath
+                : Path.Combine(Application.streamingAssetsPath, "Videos", videoFileName);
 
-            // Packaged builds cannot resolve the repository layout, so the runtime
-            // falls back to the mirrored video inside StreamingAssets.
-            return Path.Combine(Application.streamingAssetsPath, "Videos", videoFileName);
+            return ResolvePreferredPlayablePath(requestedPath);
         }
 
         public bool BeginPrepareIfNeeded()
@@ -540,6 +593,7 @@ namespace AOI360.Runtime.Video
             string videoPath = ResolveVideoPath();
             activeVideoPath = videoPath;
             hasReachedPlaybackEnd = false;
+            hasRetriedWithAlternativePath = false;
 
             if (!File.Exists(videoPath))
             {
@@ -554,8 +608,10 @@ namespace AOI360.Runtime.Video
             hasPreparationStarted = true;
             hasPreparationFailed = false;
             lastPrepareErrorMessage = string.Empty;
+            ResetProjectionNormalization();
             ClearOutputToBlack();
             ApplySkyboxOutput();
+            RefreshImmersiveSphereMaterial(forceRefresh: true);
 
             if (logVideoEvents)
             {
@@ -703,6 +759,167 @@ namespace AOI360.Runtime.Video
             {
                 runtimeVideoSphere.SetActive(visible);
             }
+        }
+
+        private void SyncSphereCenterToPresentationCamera()
+        {
+            if (!followPresentationCameraPosition)
+            {
+                return;
+            }
+
+            ResolveImmersiveOutputReferences();
+            if (sphereCenter == null || presentationCamera == null)
+            {
+                return;
+            }
+
+            sphereCenter.position = presentationCamera.transform.position;
+        }
+
+        private void ResetProjectionNormalization()
+        {
+            projectionScale = Vector2.one;
+            projectionOffset = Vector2.zero;
+        }
+
+        private void UpdateProjectionNormalization(int width, int height)
+        {
+            ResetProjectionNormalization();
+
+            if (!normalizeProjectionToTwoToOne || width <= 0 || height <= 0)
+            {
+                return;
+            }
+
+            float aspect = (float)width / Mathf.Max(1f, height);
+            if (Mathf.Approximately(aspect, 2f))
+            {
+                return;
+            }
+
+            if (aspect < 2f)
+            {
+                float visibleVerticalFraction = Mathf.Clamp01(aspect / 2f);
+                float cropOffset = (1f - visibleVerticalFraction) * 0.5f;
+                projectionScale = new Vector2(1f, visibleVerticalFraction);
+                projectionOffset = new Vector2(0f, cropOffset);
+            }
+            else
+            {
+                float visibleHorizontalFraction = Mathf.Clamp01(2f / aspect);
+                float cropOffset = (1f - visibleHorizontalFraction) * 0.5f;
+                projectionScale = new Vector2(visibleHorizontalFraction, 1f);
+                projectionOffset = new Vector2(cropOffset, 0f);
+            }
+
+            if (logVideoEvents)
+            {
+                Debug.Log(
+                    $"[VideoPlayback] Projection normalization applied. " +
+                    $"sourceAspect={aspect:0.000}, scale=({projectionScale.x:0.000}, {projectionScale.y:0.000}), " +
+                    $"offset=({projectionOffset.x:0.000}, {projectionOffset.y:0.000})"
+                );
+            }
+        }
+
+        private static bool VectorsApproximatelyEqual(Vector2 a, Vector2 b)
+        {
+            return Mathf.Approximately(a.x, b.x) && Mathf.Approximately(a.y, b.y);
+        }
+
+        private string ResolvePreferredPlayablePath(string requestedPath)
+        {
+            if (string.IsNullOrWhiteSpace(requestedPath))
+            {
+                return requestedPath;
+            }
+
+            string directory = Path.GetDirectoryName(requestedPath);
+            string stem = Path.GetFileNameWithoutExtension(requestedPath);
+            if (string.IsNullOrWhiteSpace(directory) || string.IsNullOrWhiteSpace(stem))
+            {
+                return requestedPath;
+            }
+
+            for (int i = 0; i < UnityPreferredVideoExtensions.Length; i++)
+            {
+                string candidatePath = Path.Combine(directory, stem + UnityPreferredVideoExtensions[i]);
+                if (!File.Exists(candidatePath))
+                {
+                    continue;
+                }
+
+                if (!string.Equals(candidatePath, requestedPath, StringComparison.OrdinalIgnoreCase) && logVideoEvents)
+                {
+                    Debug.LogWarning(
+                        $"[VideoPlayback] Preferred playable fallback found for '{Path.GetFileName(requestedPath)}': " +
+                        $"{Path.GetFileName(candidatePath)}"
+                    );
+                }
+
+                return candidatePath;
+            }
+
+            return requestedPath;
+        }
+
+        private bool TryRetryWithAlternativePath(VideoPlayer source)
+        {
+            if (source == null || hasRetriedWithAlternativePath || string.IsNullOrWhiteSpace(activeVideoPath))
+            {
+                return false;
+            }
+
+            string alternativePath = FindAlternativeVideoPath(activeVideoPath);
+            if (string.IsNullOrWhiteSpace(alternativePath))
+            {
+                return false;
+            }
+
+            hasRetriedWithAlternativePath = true;
+            activeVideoPath = alternativePath;
+            hasPreparationStarted = true;
+            hasPreparationFailed = false;
+            lastPrepareErrorMessage = string.Empty;
+            ClearOutputToBlack();
+            ApplySkyboxOutput();
+            source.source = VideoSource.Url;
+            source.url = alternativePath;
+
+            if (logVideoEvents)
+            {
+                Debug.LogWarning(
+                    $"[VideoPlayback] Retrying video preparation with alternative container: {alternativePath}"
+                );
+            }
+
+            source.Prepare();
+            return true;
+        }
+
+        private string FindAlternativeVideoPath(string failedPath)
+        {
+            string directory = Path.GetDirectoryName(failedPath);
+            string stem = Path.GetFileNameWithoutExtension(failedPath);
+            if (string.IsNullOrWhiteSpace(directory) || string.IsNullOrWhiteSpace(stem))
+            {
+                return string.Empty;
+            }
+
+            for (int i = 0; i < UnityPreferredVideoExtensions.Length; i++)
+            {
+                string candidatePath = Path.Combine(directory, stem + UnityPreferredVideoExtensions[i]);
+                if (!File.Exists(candidatePath) ||
+                    string.Equals(candidatePath, failedPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                return candidatePath;
+            }
+
+            return string.Empty;
         }
     }
 }

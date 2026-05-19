@@ -87,26 +87,26 @@ The present draft therefore positions itself less as a generic review article an
 The proposed system is structured into three layers: offline AOI construction, runtime experimental execution in Unity, and post hoc analysis of gaze-AOI metrics.
 
 \subsection{Offline AOI generation}
-AOIs are generated offline in order to keep the runtime lightweight, deterministic, and auditable. In the current implementation, this layer begins by extracting sparse frames from the source 360$^{\circ}$ video. These frames are then processed with a text-prompt object detector, currently a Grounding DINO-based stage, to produce object proposals in image coordinates. Detections are filtered by class and confidence and then associated across sparse keyframes through a lightweight tracking heuristic based on label agreement, IoU, and centre-distance continuity.
+AOIs are generated offline in order to keep the runtime lightweight, deterministic, and auditable. In the current implementation, this layer begins by extracting sparse frames from the source 360$^{\circ}$ video. These frames are then processed with a configurable text-prompt object detector to produce object proposals in image coordinates. Detections are filtered by class and confidence and then associated across sparse keyframes through a lightweight tracking heuristic based on label agreement, IoU, and centre-distance continuity.
 
 The crucial design decision in this stage is that each persistent AOI instance receives a stable numeric identifier and a stable exact color. This identity is preserved across exported keyframes even when the AOI moves through the scene. The offline exporter then writes four synchronized artefacts: (1) per-keyframe AOI map PNGs, (2) per-keyframe lightweight JSON files, (3) a sequence manifest containing global AOI definitions and frame indexing, and (4) a binary RGB24 runtime pack for fast texture uploads in Unity. A fixed horizontal yaw offset can be baked into the exported AOI maps so that runtime alignment does not require per-frame rotational compensation inside the engine.
 
 This layer is intentionally designed as a replaceable authoring pipeline. The current implementation uses bounding-box-derived AOI regions as a practical first operational step, while the target architecture remains compatible with later upgrades involving segmentation, temporal propagation, seam-aware post-processing, and human-in-the-loop correction.
 
 \subsection{Runtime in Unity}
-The Unity runtime is responsible for 360\textdegree\ video playback, frame-synchronised gaze acquisition, spherical mapping, AOI lookup, visual debugging, and logging. The active experimental scene is \texttt{Phase0\_360Playback\_VR}. Video is prepared from \texttt{StreamingAssets} and rendered as a panoramic skybox in Unity \cite{unity_panoramic_intro,unity_panoramic_video,unity_panoramic_skybox}. Eye tracking is acquired through the OpenXR eye-gaze path when available, with a vendor-specific HTC VIVE fallback for cases where the standard path is invalid or incomplete \cite{openxr_eye_gaze_ext,vive_openxr_overview,vive_eye_gaze,vive_eye_tracker}.
+The Unity runtime is responsible for 360\textdegree\ video playback, frame-synchronised gaze acquisition, spherical mapping, AOI lookup, visual debugging, and logging. The active experimental scene is \texttt{Phase0\_360Playback\_VR}. During development, stimuli are discovered directly from the repository \texttt{data/input\_videos} and \texttt{data/processed} trees, while a mirrored \texttt{StreamingAssets} layout is kept as the packaging path for later builds. Video is rendered as a panoramic skybox and, when required, on an inverted inner sphere in Unity \cite{unity_panoramic_intro,unity_panoramic_video,unity_panoramic_skybox}. Eye tracking is acquired through the OpenXR eye-gaze path when available, with a vendor-specific HTC VIVE fallback for cases where the standard path is invalid or incomplete \cite{openxr_eye_gaze_ext,vive_openxr_overview,vive_eye_gaze,vive_eye_tracker}.
 
-At runtime, gaze is converted from world-space origin and direction into azimuth, elevation, and equirectangular UV coordinates. AOI lookup is then performed against the currently active AOI map, using an exact-color metadata contract as the preferred production mode. A dedicated runtime loader advances the AOI sequence according to the displayed \texttt{VideoPlayer.frame}, handles loop resets safely, and prefers the binary runtime pack over per-frame PNG decoding. A semi-transparent AOI overlay can be rendered on an inner sphere for validation, and a fixation visualizer provides in-headset feedback through hit markers and a short fixation trail.
+At runtime, gaze is converted from world-space origin and direction into azimuth, elevation, and equirectangular UV coordinates. AOI lookup is then performed against the currently active AOI map, using an exact-color metadata contract as the preferred production mode. A dedicated runtime loader advances the AOI sequence according to the displayed \texttt{VideoPlayer.frame}, handles loop resets safely, and prefers the binary runtime pack over per-frame PNG decoding. A semi-transparent AOI overlay can be rendered on an inner sphere for validation, and a fixation visualizer provides in-headset feedback through hit markers and a short fixation trail. The runtime also includes a projection-normalisation step for non-canonical source clips that are not encoded in an exact 2:1 equirectangular aspect ratio, so that exploratory test stimuli can remain aligned with the AOI overlay without requiring a separate ad hoc playback path.
 
 \subsection{Post hoc analysis}
-Gaze samples and fixation events are analysed after data collection in order to compute downstream metrics such as time to first fixation (TFF), fixation duration (FD), total fixation duration (TFD), fixation count (FC), and fixation order. The analytical layer is also responsible for comparing manual and automatic AOIs both spatially and functionally. In other words, it is not enough to compare AOI shapes frame by frame; the decisive question is whether the choice of AOI source materially changes the gaze metrics that a researcher would interpret.
+Gaze samples and fixation events are analysed after data collection in order to compute downstream metrics such as time to first fixation (TFF), fixation duration (FD), total fixation duration (TFD), fixation count (FC), and fixation order. The analytical layer is also responsible for comparing manual and automatic AOIs both spatially and functionally. In other words, it is not enough to compare AOI shapes frame by frame; the decisive question is whether the choice of AOI source materially changes the gaze metrics that a researcher would interpret. The current implementation already ingests the fixation-based Unity CSV exports and writes normalized rows plus per-session, per-participant, per-video, AOI, and AOI-transition summaries, thereby establishing the first stable bridge between runtime capture and the later manual-versus-automatic validation study.
 
 \section{Method}
 
 \subsection{Hardware and software setup}
 The current implementation was developed and tested around an HTC VIVE Focus Vision headset with integrated eye tracking. On the software side, the runtime was implemented in Unity 6 (\texttt{6000.3.11f1}) using the Universal Render Pipeline. The Unity project currently depends on \texttt{com.unity.xr.openxr} version \texttt{1.16.1}, \texttt{com.unity.xr.management} version \texttt{4.5.4}, and the HTC VIVE OpenXR package version \texttt{2.5.0}. The runtime uses the standard OpenXR eye-gaze path when valid and falls back to the HTC beta eye-tracker API when required by the device configuration \cite{vive_openxr_overview,vive_eye_gaze,vive_eye_tracker,openxr_eye_gaze_ext}.
 
-The offline preprocessing stack was implemented in Python and currently uses OpenCV for frame extraction, Hugging Face Transformers for Grounding DINO inference, Pillow for AOI map export, and Tkinter for an operator-facing preprocessing GUI. The GUI acts as a thin orchestration layer over the same command-line pipeline used for scripted rebuilds, allowing a video to be selected, processed, and exported into the Unity handoff layout with visible progress and logs.
+The offline preprocessing stack was implemented in Python and currently uses OpenCV for frame extraction, Hugging Face Transformers and Ultralytics for open-vocabulary detection experiments, Pillow for AOI map export, and Tkinter for an operator-facing preprocessing GUI. The GUI acts as a thin orchestration layer over the same command-line pipeline used for scripted rebuilds, allowing a video to be selected, processed, and exported into the Unity handoff layout with visible progress and logs.
 
 \subsection{Stimuli}
 At the present stage, the implemented system has been validated on a pilot 360\textdegree\ video stimulus used to exercise the end-to-end pipeline. The current repository and preprocessing GUI are organised around a default input video named \texttt{video\_360.mp4}. This stimulus is not yet intended to constitute the full experimental corpus; rather, it provides a controlled integration target for verifying gaze acquisition, AOI export, AOI playback alignment, and logging contracts before the larger manual-versus-automatic validation study is frozen.
@@ -123,7 +123,7 @@ The dynamic AOI pipeline is intentionally staged. The currently operational vers
 
 \begin{enumerate}[leftmargin=1.5em]
     \item sparse frame extraction from the source video,
-    \item text-prompt detection over those frames using a Grounding DINO-based step,
+    \item text-prompt detection over those frames using a configurable open-vocabulary detector,
     \item confidence filtering and optional class filtering,
     \item lightweight temporal association to maintain persistent AOI identities across sparse keyframes,
     \item export of exact-color AOI maps, per-keyframe JSON files, a global manifest, and a binary RGB24 runtime pack.
@@ -131,33 +131,53 @@ The dynamic AOI pipeline is intentionally staged. The currently operational vers
 
 In this first operational version, AOI regions are derived from detection geometry rather than full segmentation masks. The resulting representation is nevertheless already compatible with the Unity runtime contract because each AOI instance is encoded by a unique exact color and linked to semantic metadata in JSON. The preprocessing GUI and the master rebuild script allow an operator to trigger this full sequence from a selected input video and regenerate all runtime assets from scratch.
 
-\subsubsection{Detector benchmark: Grounding DINO versus YOLO-World}
+\subsubsection{Detector benchmark: Grounding DINO, YOLO-World, and OWLv2}
 
-Although the first operational version of the preprocessing stack was built around Grounding DINO, the architecture deliberately keeps the detector stage replaceable. Before freezing the next iteration of the pipeline, a dedicated benchmark was therefore carried out to compare two candidate detectors: \texttt{IDEA-Research/grounding-dino-tiny} and \texttt{yolov8s-worldv2.pt} (YOLO-World). The purpose of this benchmark was not to claim a universally better detector, but to characterise the engineering trade-off that matters most for the present system: preprocessing time versus detection coverage. Because AOIs are produced offline, a faster detector can reduce turnaround time during stimulus preparation and debugging. However, if that speed gain is achieved at the cost of missing too many relevant objects, the quality of exported AOI maps may degrade and later gaze--AOI analyses may become less reliable.
+Although the first operational version of the preprocessing stack was built around Grounding DINO, the architecture deliberately keeps the detector stage replaceable. Before freezing the next iteration of the pipeline, a dedicated benchmark was therefore carried out to compare three candidate detectors: \texttt{IDEA-Research/grounding-dino-tiny}, \texttt{yolov8s-worldv2.pt} (YOLO-World), and \texttt{google/owlv2-base-patch16-ensemble} (OWLv2). The purpose of this benchmark was not to claim a universally superior detector, but to characterise the engineering trade-off that matters most for the present system: preprocessing time versus useful detection coverage. Because AOIs are produced offline, a faster detector can reduce turnaround time during stimulus preparation and debugging. However, if that speed gain is achieved at the cost of missing too many relevant objects, the quality of exported AOI maps may degrade and later gaze--AOI analyses may become less reliable.
 
-The benchmark was conducted as a technical comparison rather than as the final scientific validation corpus of the study. Five 360\textdegree\ video clips were used as an engineering benchmark set: \texttt{sample2Camera360}, \texttt{sampleCamera360}, \texttt{sampleForest360}, \texttt{sampleLions360}, and \texttt{sampleWolves360}. For each video, the benchmark consumed the pre-extracted sparse frame folders already generated by the preprocessing pipeline. Thirty frames were sampled evenly across each video, one warm-up run was executed per model and video to avoid counting cold-start effects, and two measured runs were retained in the final summary. Both detectors were executed on the same hardware configuration, namely an NVIDIA GeForce RTX 3050 Laptop GPU with CUDA~12.6 and \texttt{torch 2.11.0+cu126}, using batch size~4 and FP16 inference. Grounding DINO additionally downscaled frames for inference to at most 1920$\times$960, whereas YOLO-World used the same sparse frames with the fixed prompt classes \texttt{person}, \texttt{face}, \texttt{bottle}, \texttt{screen}, and \texttt{product}. Warm-up runs were excluded from the reported statistics.
-
-Table~\ref{tab:detector-benchmark-summary} and Figure~\ref{fig:detector-benchmark} summarise the main outcome of the comparison. YOLO-World was faster than Grounding DINO in all five videos. The observed speed-up ranged from 7.73$\times$ to 14.26$\times$, with a mean acceleration of approximately 10.15$\times$. This result is large enough to matter operationally: a detector that consistently reduces preprocessing time by one order of magnitude makes iterative AOI generation, parameter tuning, and pipeline debugging substantially easier.
-
-The other side of the trade-off is detection coverage. Across the five benchmark videos, YOLO-World produced on average 48\% of the detections returned by Grounding DINO. The loss was moderate in \texttt{sample2Camera360} and \texttt{sampleForest360}, where YOLO-World retained roughly three quarters of the detections. It became more pronounced in \texttt{sampleCamera360} and especially \texttt{sampleLions360}. The most extreme case was \texttt{sampleWolves360}, where Grounding DINO still produced 16 detections while YOLO-World returned none. This pattern suggests that the gain in throughput is accompanied by a reduction in recall under the fixed prompt set and confidence configuration used in the benchmark.
-
-The most plausible explanation is architectural. Grounding DINO is a heavier language-grounded transformer detector and is therefore computationally more expensive, but it appears to preserve better coverage on sparse, ambiguous, or visually difficult frames. YOLO-World, by contrast, benefits from a much lighter detection path and therefore offers far lower latency, but it seems more sensitive to the exact prompt vocabulary, detector confidence, and appearance variation across scenes. In other words, the benchmark does not suggest that YOLO-World is ``wrong'' in general; rather, it shows that under the present settings it trades recall for speed. This interpretation is consistent with the fact that YOLO-World remained fast and stable across all videos while the largest detection losses occurred in the clips that already looked challenging from a preprocessing perspective.
+The benchmark was conducted as a technical comparison rather than as the final scientific validation corpus of the study. Five 360\textdegree\ video clips were used as an engineering benchmark set: \texttt{sample2Camera360}, \texttt{sampleCamera360}, \texttt{sampleForest360}, \texttt{sampleLions360}, and \texttt{sampleWolves360}. For each video, the benchmark consumed the pre-extracted sparse frame folders already generated by the preprocessing pipeline. Thirty frames were sampled evenly across each video, one warm-up run was executed per model and video to avoid counting cold-start effects, and two measured runs were retained in the final summary. The benchmark was executed on an NVIDIA GeForce RTX 3050 Laptop GPU with CUDA~12.6 and \texttt{torch 2.11.0+cu126}, using batch size~4 and FP16 inference, and all model assets were already available in local cache so that network download time was not counted as part of the experiment. Each video was evaluated with a content-specific semantic prompt, shared by all three detectors for that video, as summarised in Table~\ref{tab:detector-benchmark-prompts}. Transformer-based detectors were additionally constrained to a maximum inference size of 1920$\times$960. Warm-up runs were excluded from the reported statistics.
 
 \begin{table}[htbp]
     \centering
-    \small
-    \begin{tabular}{lrrrrrr}
+    \scriptsize
+    \begin{tabular}{lp{0.72\textwidth}}
         \toprule
-        Stimulus & GD time (s) & YW time (s) & Speed-up & GD det. & YW det. & YW/GD \\
+        Stimulus & Prompt used in the benchmark \\
         \midrule
-        \texttt{sample2Camera360} & 67.75 & 6.75 & 10.04 & 236 & 174 & 0.74 \\
-        \texttt{sampleCamera360} & 69.38 & 8.97 & 7.73 & 459 & 271 & 0.59 \\
-        \texttt{sampleForest360} & 75.55 & 7.16 & 10.55 & 45 & 34 & 0.76 \\
-        \texttt{sampleLions360} & 54.92 & 6.71 & 8.19 & 34 & 10 & 0.29 \\
-        \texttt{sampleWolves360} & 106.59 & 7.48 & 14.26 & 16 & 0 & 0.00 \\
+        \texttt{sample2Camera360} & \texttt{person. face. screen. bottle. wine. screen. plate.} \\
+        \texttt{sampleCamera360} & \texttt{person. camera. face. screen. window. laptop. keyboard.} \\
+        \texttt{sampleForest360} & \texttt{tree. person. river. wood. plant. grass. trunk.} \\
+        \texttt{sampleLions360} & \texttt{lion. animal. cat. gazelle. tree. cloud. elephant.} \\
+        \texttt{sampleWolves360} & \texttt{tree. wolf. animal. wood. dog. grass. trunk.} \\
         \bottomrule
     \end{tabular}
-    \caption{Mean benchmark results over two measured runs per detector and video. GD = Grounding DINO, YW = YOLO-World.}
+    \caption{Per-video semantic prompts loaded from the benchmark prompt file and shared across the three detector backends for each stimulus.}
+    \label{tab:detector-benchmark-prompts}
+\end{table}
+
+Table~\ref{tab:detector-benchmark-summary} and Figure~\ref{fig:detector-benchmark} summarise the main outcome of the comparison. All three detectors produced non-zero detections in the five stimuli, although with very different magnitudes. Grounding DINO was the slowest model, with an average runtime of 77.18~s per video. YOLO-World was the fastest option in every case, with an average runtime of 8.86~s and a mean speed-up of 9.08$\times$ relative to Grounding DINO. OWLv2 occupied an intermediate runtime regime at 27.17~s on average, corresponding to a mean speed-up of 3.98$\times$ over Grounding DINO. From a pure throughput perspective, both alternatives clearly reduced preprocessing latency, but YOLO-World delivered the strongest acceleration by a wide margin.
+
+Detection coverage tells a more nuanced story. YOLO-World retained approximately 40\% of the detections returned by Grounding DINO across the five benchmark videos, while OWLv2 retained about 30\%. OWLv2 returned 18 detections in \texttt{sampleForest360}, 83 in \texttt{sampleLions360}, and 10 in \texttt{sampleWolves360}. YOLO-World was strongest on the two camera-centric clips and on \texttt{sample2Camera360}, but its recall dropped sharply in the more difficult wildlife scenes, especially \texttt{sampleWolves360}, where it returned only 2 detections against Grounding DINO's 74. These results indicate that stimulus-specific prompting makes the comparison more representative of the target scenes, but does not eliminate the underlying coverage gap relative to Grounding DINO.
+
+The most plausible explanation is architectural and configuration-dependent. Grounding DINO is a heavier grounded transformer detector and is therefore computationally more expensive, but it preserves the best overall coverage on sparse, ambiguous, or visually difficult frames. YOLO-World benefits from a much lighter detection path and therefore offers substantially lower latency, while still retaining a useful proportion of detections when the prompt matches the visual semantics of the scene. OWLv2 appears more sensitive to prompt formulation and threshold selection than the other two backends, which is consistent with its intermediate position in the benchmark: faster than Grounding DINO, but with lower coverage; more expressive than YOLO-World in some semantic cases, but markedly slower.
+
+\begin{table}[htbp]
+    \centering
+    \scriptsize
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lrrrrrr}
+        \toprule
+        Stimulus & GD time (s) & OWL time (s) & YW time (s) & GD det. & OWL det. & YW det. \\
+        \midrule
+        \texttt{sample2Camera360} & 66.81 & 7.50 & 6.43 & 305 & 69 & 242 \\
+        \texttt{sampleCamera360} & 66.18 & 36.25 & 6.99 & 581 & 231 & 414 \\
+        \texttt{sampleForest360} & 69.17 & 19.65 & 6.65 & 133 & 18 & 34 \\
+        \texttt{sampleLions360} & 75.45 & 21.20 & 12.01 & 138 & 83 & 32 \\
+        \texttt{sampleWolves360} & 108.31 & 51.24 & 12.21 & 74 & 10 & 2 \\
+        \bottomrule
+    \end{tabular}%
+    }
+    \caption{Mean benchmark results over two measured runs per detector and video using per-video semantic prompts. GD = Grounding DINO, OWL = OWLv2, YW = YOLO-World.}
     \label{tab:detector-benchmark-summary}
 \end{table}
 
@@ -168,7 +188,7 @@ The most plausible explanation is architectural. Grounding DINO is a heavier lan
         \begin{tikzpicture}
             \begin{axis}[
                 ybar=3pt,
-                bar width=8pt,
+                bar width=6pt,
                 width=0.97\textwidth,
                 height=6.4cm,
                 ymin=0,
@@ -177,13 +197,14 @@ The most plausible explanation is architectural. Grounding DINO is a heavier lan
                 xtick=data,
                 xticklabels={sample2Camera360,sampleCamera360,sampleForest360,sampleLions360,sampleWolves360},
                 x tick label style={rotate=25,anchor=east,font=\scriptsize},
-                legend style={font=\small,at={(0.5,1.05)},anchor=south,legend columns=2},
+                legend style={font=\small,at={(0.5,1.05)},anchor=south,legend columns=3},
                 ymajorgrids=true,
                 grid style={dashed,gray!30}
             ]
-                \addplot coordinates {(v1,67.75) (v2,69.38) (v3,75.55) (v4,54.92) (v5,106.59)};
-                \addplot coordinates {(v1,6.75) (v2,8.97) (v3,7.16) (v4,6.71) (v5,7.48)};
-                \legend{Grounding DINO, YOLO-World}
+                \addplot coordinates {(v1,66.81) (v2,66.18) (v3,69.17) (v4,75.45) (v5,108.31)};
+                \addplot coordinates {(v1,7.50) (v2,36.25) (v3,19.65) (v4,21.20) (v5,51.24)};
+                \addplot coordinates {(v1,6.43) (v2,6.99) (v3,6.65) (v4,12.01) (v5,12.21)};
+                \legend{Grounding DINO, OWLv2, YOLO-World}
             \end{axis}
         \end{tikzpicture}
         \caption{Mean inference time per video.}
@@ -196,7 +217,7 @@ The most plausible explanation is architectural. Grounding DINO is a heavier lan
         \begin{tikzpicture}
             \begin{axis}[
                 ybar=3pt,
-                bar width=8pt,
+                bar width=6pt,
                 width=0.97\textwidth,
                 height=6.4cm,
                 ymin=0,
@@ -205,22 +226,23 @@ The most plausible explanation is architectural. Grounding DINO is a heavier lan
                 xtick=data,
                 xticklabels={sample2Camera360,sampleCamera360,sampleForest360,sampleLions360,sampleWolves360},
                 x tick label style={rotate=25,anchor=east,font=\scriptsize},
-                legend style={font=\small,at={(0.5,1.05)},anchor=south,legend columns=2},
+                legend style={font=\small,at={(0.5,1.05)},anchor=south,legend columns=3},
                 ymajorgrids=true,
                 grid style={dashed,gray!30}
             ]
-                \addplot coordinates {(v1,236) (v2,459) (v3,45) (v4,34) (v5,16)};
-                \addplot coordinates {(v1,174) (v2,271) (v3,34) (v4,10) (v5,0)};
-                \legend{Grounding DINO, YOLO-World}
+                \addplot coordinates {(v1,305) (v2,581) (v3,133) (v4,138) (v5,74)};
+                \addplot coordinates {(v1,69) (v2,231) (v3,18) (v4,83) (v5,10)};
+                \addplot coordinates {(v1,242) (v2,414) (v3,34) (v4,32) (v5,2)};
+                \legend{Grounding DINO, OWLv2, YOLO-World}
             \end{axis}
         \end{tikzpicture}
         \caption{Mean number of exported detections per video.}
     \end{subfigure}
-    \caption{Detector benchmark on the five-video engineering benchmark set. The upper chart shows the strong runtime advantage of YOLO-World, whereas the lower chart shows the corresponding drop in detection yield on several videos.}
+    \caption{Detector benchmark on the five-video engineering benchmark set with per-video semantic prompts. The upper chart shows the runtime trade-off among the three detectors, whereas the lower chart shows the corresponding detection yield after adapting the prompt vocabulary to each stimulus.}
     \label{fig:detector-benchmark}
 \end{figure}
 
-From the standpoint of this project, the benchmark leads to two practical conclusions. First, the detector stage should remain configurable rather than hard-coded, because the ``best'' model depends on whether the current priority is speed or coverage. Second, the final AOI generation workflow should not rely exclusively on raw detection counts when selecting a model. A faster detector is useful only insofar as the resulting AOIs remain spatially and functionally valid for later gaze analysis. For that reason, the benchmark reported here is best understood as an engineering filter for the preprocessing stage, not as a substitute for the later validation against manual annotations and downstream gaze metrics. In practical terms, the current evidence supports using YOLO-World for rapid exploratory preprocessing and iteration, while keeping Grounding DINO as the safer option when difficult stimuli require higher detection coverage before the AOI sequence is frozen.
+From the standpoint of this project, the benchmark leads to three practical conclusions. First, the detector stage should remain configurable rather than hard-coded, because the ``best'' model depends not only on speed versus coverage, but also on how well the prompt vocabulary fits the stimulus. Second, YOLO-World is the most useful exploratory backend in this benchmark: it is consistently the fastest option and performs strongly on the human- and device-centric clips. Third, Grounding DINO is the safest choice when difficult scenes require robust coverage before the AOI sequence is frozen, whereas OWLv2 should be treated as a viable experimental alternative whose main value lies between the other two models. For that reason, the benchmark reported here is best understood as an engineering filter for the preprocessing stage, not as a substitute for later validation against manual annotations and downstream gaze metrics.
 
 The target version of the method extends this pipeline in three ways. First, detection boxes will be refined into masks through a segmentation stage, rather than remaining box-like approximations. Second, temporal propagation and re-detection will be strengthened to better handle appearance changes, occlusion, and discontinuous motion. Third, human validation will be added as an explicit quality-control stage in which AOI outputs can be reviewed and corrected before they are frozen as experimental inputs. This staged roadmap keeps the current implementation useful for integration while preserving a clear path toward the full methodological study.
 
@@ -237,7 +259,7 @@ This design was adopted for three reasons. First, frame-level synchronisation re
 
 For the present project, only fields that support experimental traceability or downstream analysis are considered mandatory. Interface-only variables, redundant transforms, and debug overlays are treated as optional and should not be allowed to destabilise the schema. Likewise, AOI assignment must be stored as the best available runtime lookup result, but the final methodological evaluation will determine whether the automatic AOI pipeline preserves gaze-based metrics relative to manual AOIs.
 
-In the current prototype, CSV export is fixation-based rather than raw-sample-complete: the runtime commits fixation events every 250 ms and writes AOI-linked rows at that cadence. This choice was made to validate the end-to-end integration path early while keeping runtime logging volume manageable during device-side testing. The broader analytical design, however, still assumes a future separation between raw gaze samples and derived fixation events when the final experimental protocol is frozen.
+In the current prototype, CSV export is fixation-based rather than raw-sample-complete: the runtime commits fixation events every 250 ms and writes AOI-linked rows at that cadence. This choice was made to validate the end-to-end integration path early while keeping runtime logging volume manageable during device-side testing. Whenever the runtime can resolve the repository root, these CSV files are written directly into the repository \texttt{data/exports/csv} folder so that the post-processing stage can consume them without an additional manual copy step. The broader analytical design, however, still assumes a future separation between raw gaze samples and derived fixation events when the final experimental protocol is frozen.
 
 \subsubsection{Runtime data artefacts}
 

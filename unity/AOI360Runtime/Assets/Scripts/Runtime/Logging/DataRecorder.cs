@@ -189,7 +189,11 @@ namespace AOI360.Runtime.Logging
                 return;
             }
 
-            string folderPath = Path.Combine(Application.persistentDataPath, "Exports");
+            // Prefer the repository export folder so Unity runtime logs land
+            // next to the Python pipeline artefacts and analytics can consume
+            // them without a manual copy step. Packaged builds still fall back
+            // to persistentDataPath when the repo root cannot be resolved.
+            string folderPath = ResolveExportFolderPath();
             Directory.CreateDirectory(folderPath);
 
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
@@ -202,6 +206,16 @@ namespace AOI360.Runtime.Logging
             LastExportPath = filePath;
             hasExportedCurrentRows = true;
             Debug.Log($"[DataRecorder] CSV exported to: {filePath}");
+        }
+
+        private static string ResolveExportFolderPath()
+        {
+            if (ExperimentStimulusCatalog.TryResolveRepositoryRoot(out string repositoryRoot))
+            {
+                return Path.Combine(repositoryRoot, "data", "exports", "csv");
+            }
+
+            return Path.Combine(Application.persistentDataPath, "Exports");
         }
 
         private void TryStartRecording()

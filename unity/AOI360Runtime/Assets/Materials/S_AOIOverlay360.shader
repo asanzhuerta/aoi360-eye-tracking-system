@@ -9,6 +9,8 @@ Shader "AOI360/Equirectangular Overlay"
         _VerticalOffsetDegrees("Vertical Offset Degrees", Float) = 0
         _FlipHorizontal("Flip Horizontal", Float) = 0
         _FlipVertical("Flip Vertical", Float) = 0
+        _ProjectionScale("Projection Scale", Vector) = (1,1,0,0)
+        _ProjectionOffset("Projection Offset", Vector) = (0,0,0,0)
         _BaseOpacity("Base Opacity", Float) = 0.12
         _FocusedOpacity("Focused Opacity", Float) = 0.4
         _HasFocusedAoi("Has Focused AOI", Float) = 0
@@ -60,6 +62,8 @@ Shader "AOI360/Equirectangular Overlay"
                 float _VerticalOffsetDegrees;
                 float _FlipHorizontal;
                 float _FlipVertical;
+                float4 _ProjectionScale;
+                float4 _ProjectionOffset;
                 float _BaseOpacity;
                 float _FocusedOpacity;
                 float _HasFocusedAoi;
@@ -93,6 +97,9 @@ Shader "AOI360/Equirectangular Overlay"
                 {
                     v = 1.0 - v;
                 }
+
+                u = saturate(_ProjectionOffset.x + (u * _ProjectionScale.x));
+                v = saturate(_ProjectionOffset.y + (v * _ProjectionScale.y));
 
                 half4 color = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, float2(u, v));
                 if (all(color.rgb <= half3(0.001, 0.001, 0.001)))

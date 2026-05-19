@@ -8,6 +8,8 @@ Shader "AOI360/Equirectangular Video"
         _VerticalOffsetDegrees("Vertical Offset Degrees", Float) = 0
         _FlipHorizontal("Flip Horizontal", Float) = 0
         _FlipVertical("Flip Vertical", Float) = 0
+        _ProjectionScale("Projection Scale", Vector) = (1,1,0,0)
+        _ProjectionOffset("Projection Offset", Vector) = (0,0,0,0)
     }
 
     SubShader
@@ -53,6 +55,8 @@ Shader "AOI360/Equirectangular Video"
                 float _VerticalOffsetDegrees;
                 float _FlipHorizontal;
                 float _FlipVertical;
+                float4 _ProjectionScale;
+                float4 _ProjectionOffset;
             CBUFFER_END
 
             Varyings Vert(Attributes input)
@@ -82,6 +86,9 @@ Shader "AOI360/Equirectangular Video"
                 {
                     v = 1.0 - v;
                 }
+
+                u = saturate(_ProjectionOffset.x + (u * _ProjectionScale.x));
+                v = saturate(_ProjectionOffset.y + (v * _ProjectionScale.y));
 
                 half4 color = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, float2(u, v));
                 color.rgb *= _Tint.rgb;

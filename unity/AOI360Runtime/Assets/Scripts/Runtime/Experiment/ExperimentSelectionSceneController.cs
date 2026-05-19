@@ -20,6 +20,7 @@ namespace AOI360.Runtime.Experiment
         private static readonly string[] TargetSceneNames = { "Initial_Scene" };
         private const string StimulusManifestSuffix = "_aoi_sequence_manifest.json";
         private static readonly bool IncludeStreamingAssetsMirror = false;
+        private static readonly string[] PreferredVideoExtensions = { ".mp4", ".mov", ".webm", ".mkv" };
 
         private static readonly string[] PlaybackSceneCandidates =
         {
@@ -63,6 +64,10 @@ namespace AOI360.Runtime.Experiment
         private Button firstStimulusButton;
         private Vector3 cachedCanvasWorldPosition;
         private static bool sceneHookRegistered;
+        private InputAction debugTrackedPositionAction;
+        private InputAction debugTrackedRotationAction;
+        private InputAction debugClickAction;
+        private float nextInputDebugLogTime;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void RegisterSceneHook()
@@ -182,6 +187,7 @@ namespace AOI360.Runtime.Experiment
         private void LateUpdate()
         {
             MaintainPresentationCanvasTransform();
+            DebugRuntimeVrInput();
         }
 
         private void EnsureEventSystem()
@@ -230,11 +236,8 @@ namespace AOI360.Runtime.Experiment
                 return;
             }
 
-            if (HasSceneTrackedDeviceInput(inputModule))
-            {
-                inputModule.actionsAsset.Enable();
-                return;
-            }
+            // En esta escena queremos forzar una configuración conocida.
+            // No asumimos que el EventSystem de la escena ya tenga acciones XR correctas.
 
             if (runtimeUiActionsAsset == null)
             {
@@ -262,6 +265,9 @@ namespace AOI360.Runtime.Experiment
             );
 
             runtimeUiActionsAsset.Enable();
+            debugTrackedPositionAction = uiMap.FindAction("TrackedDevicePosition", throwIfNotFound: true);
+            debugTrackedRotationAction = uiMap.FindAction("TrackedDeviceOrientation", throwIfNotFound: true);
+            debugClickAction = uiMap.FindAction("LeftClick", throwIfNotFound: true);
         }
 
         private static bool HasSceneTrackedDeviceInput(InputSystemUIInputModule inputModule)
@@ -352,14 +358,48 @@ namespace AOI360.Runtime.Experiment
                 InputActionType.PassThrough
             );
             trackedDevicePositionAction.expectedControlType = "Vector3";
+
+            // XR genérico.
             trackedDevicePositionAction.AddBinding("<XRController>{RightHand}/devicePosition");
+            trackedDevicePositionAction.AddBinding("<XRController>{LeftHand}/devicePosition");
+
+            // OpenXR explícito.
+            trackedDevicePositionAction.AddBinding("<OpenXRController>{RightHand}/devicePosition");
+            trackedDevicePositionAction.AddBinding("<OpenXRController>{LeftHand}/devicePosition");
+
+            // Fallback tracked.
+            trackedDevicePositionAction.AddBinding("<TrackedDevice>{RightHand}/devicePosition");
+            trackedDevicePositionAction.AddBinding("<TrackedDevice>{LeftHand}/devicePosition");
+
+            // Algunos layouts exponen pointerPosition en vez de devicePosition.
+            trackedDevicePositionAction.AddBinding("<XRController>{RightHand}/pointerPosition");
+            trackedDevicePositionAction.AddBinding("<XRController>{LeftHand}/pointerPosition");
+            trackedDevicePositionAction.AddBinding("<OpenXRController>{RightHand}/pointerPosition");
+            trackedDevicePositionAction.AddBinding("<OpenXRController>{LeftHand}/pointerPosition");
 
             InputAction trackedDeviceOrientationAction = map.AddAction(
                 "TrackedDeviceOrientation",
                 InputActionType.PassThrough
             );
             trackedDeviceOrientationAction.expectedControlType = "Quaternion";
+
+            // XR genérico.
             trackedDeviceOrientationAction.AddBinding("<XRController>{RightHand}/deviceRotation");
+            trackedDeviceOrientationAction.AddBinding("<XRController>{LeftHand}/deviceRotation");
+
+            // OpenXR explícito.
+            trackedDeviceOrientationAction.AddBinding("<OpenXRController>{RightHand}/deviceRotation");
+            trackedDeviceOrientationAction.AddBinding("<OpenXRController>{LeftHand}/deviceRotation");
+
+            // Fallback tracked.
+            trackedDeviceOrientationAction.AddBinding("<TrackedDevice>{RightHand}/deviceRotation");
+            trackedDeviceOrientationAction.AddBinding("<TrackedDevice>{LeftHand}/deviceRotation");
+
+            // Algunos layouts exponen pointerRotation en vez de deviceRotation.
+            trackedDeviceOrientationAction.AddBinding("<XRController>{RightHand}/pointerRotation");
+            trackedDeviceOrientationAction.AddBinding("<XRController>{LeftHand}/pointerRotation");
+            trackedDeviceOrientationAction.AddBinding("<OpenXRController>{RightHand}/pointerRotation");
+            trackedDeviceOrientationAction.AddBinding("<OpenXRController>{LeftHand}/pointerRotation");
 
             asset.AddActionMap(map);
             return asset;
@@ -374,8 +414,24 @@ namespace AOI360.Runtime.Experiment
 
             clickAction.AddBinding("<Mouse>/leftButton");
             clickAction.AddBinding("<Touchscreen>/primaryTouch/press");
+
+            // Right hand.
             clickAction.AddBinding("<XRController>{RightHand}/triggerPressed");
             clickAction.AddBinding("<XRController>{RightHand}/trigger").WithInteraction("Press");
+            clickAction.AddBinding("<XRController>{RightHand}/primaryButton");
+
+            clickAction.AddBinding("<OpenXRController>{RightHand}/triggerPressed");
+            clickAction.AddBinding("<OpenXRController>{RightHand}/trigger").WithInteraction("Press");
+            clickAction.AddBinding("<OpenXRController>{RightHand}/primaryButton");
+
+            // Left hand.
+            clickAction.AddBinding("<XRController>{LeftHand}/triggerPressed");
+            clickAction.AddBinding("<XRController>{LeftHand}/trigger").WithInteraction("Press");
+            clickAction.AddBinding("<XRController>{LeftHand}/primaryButton");
+
+            clickAction.AddBinding("<OpenXRController>{LeftHand}/triggerPressed");
+            clickAction.AddBinding("<OpenXRController>{LeftHand}/trigger").WithInteraction("Press");
+            clickAction.AddBinding("<OpenXRController>{LeftHand}/primaryButton");
         }
 
         private static void AddSubmitBindings(InputAction submitAction)
@@ -1298,6 +1354,19 @@ namespace AOI360.Runtime.Experiment
                 return false;
             }
 
+            for (int i = 0; i < PreferredVideoExtensions.Length; i++)
+            {
+                string preferredPath = Path.Combine(videosRoot, sequenceName + PreferredVideoExtensions[i]);
+                if (!File.Exists(preferredPath))
+                {
+                    continue;
+                }
+
+                videoAbsolutePath = preferredPath;
+                videoFileName = Path.GetFileName(preferredPath);
+                return true;
+            }
+
             string[] matches = Directory.GetFiles(videosRoot, sequenceName + ".*", SearchOption.TopDirectoryOnly);
             for (int i = 0; i < matches.Length; i++)
             {
@@ -1337,19 +1406,14 @@ namespace AOI360.Runtime.Experiment
                 return;
             }
 
-            bool hasXrDevice = InputSystem.GetDevice<XRHMD>() != null;
-
             GraphicRaycaster graphicRaycaster = canvasObject.GetComponent<GraphicRaycaster>();
             if (graphicRaycaster == null)
             {
                 graphicRaycaster = canvasObject.AddComponent<GraphicRaycaster>();
             }
 
-            if (!hasXrDevice)
-            {
-                graphicRaycaster.enabled = true;
-                return;
-            }
+            graphicRaycaster.enabled = true;
+            graphicRaycaster.ignoreReversedGraphics = false;
 
             TrackedDeviceRaycaster trackedDeviceRaycaster = canvasObject.GetComponent<TrackedDeviceRaycaster>();
             if (trackedDeviceRaycaster == null)
@@ -1357,9 +1421,42 @@ namespace AOI360.Runtime.Experiment
                 trackedDeviceRaycaster = canvasObject.AddComponent<TrackedDeviceRaycaster>();
             }
 
+            trackedDeviceRaycaster.enabled = true;
             trackedDeviceRaycaster.checkFor2DOcclusion = false;
             trackedDeviceRaycaster.checkFor3DOcclusion = false;
-            graphicRaycaster.enabled = true;
         }
+
+        private void DebugRuntimeVrInput()
+        {
+            if (Time.unscaledTime < nextInputDebugLogTime)
+            {
+                return;
+            }
+
+            nextInputDebugLogTime = Time.unscaledTime + 1f;
+
+            if (debugTrackedPositionAction == null ||
+                debugTrackedRotationAction == null ||
+                debugClickAction == null)
+            {
+                return;
+            }
+
+            Vector3 position = debugTrackedPositionAction.ReadValue<Vector3>();
+            Quaternion rotation = debugTrackedRotationAction.ReadValue<Quaternion>();
+            float click = debugClickAction.ReadValue<float>();
+
+            Debug.Log(
+                $"[ExperimentSelectionSceneController] XR UI input | " +
+                $"pos={position:F3} | " +
+                $"rot=({rotation.x:F3}, {rotation.y:F3}, {rotation.z:F3}, {rotation.w:F3}) | " +
+                $"click={click:F2} | " +
+                $"posControl={debugTrackedPositionAction.activeControl?.path ?? "none"} | " +
+                $"rotControl={debugTrackedRotationAction.activeControl?.path ?? "none"} | " +
+                $"clickControl={debugClickAction.activeControl?.path ?? "none"}"
+            );
+        }
+
     }
+
 }

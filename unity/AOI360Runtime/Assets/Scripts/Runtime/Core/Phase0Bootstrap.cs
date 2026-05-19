@@ -27,6 +27,8 @@ namespace AOI360.Runtime.Core
         [SerializeField] private float overlayOpacity = 0.24f;
         [SerializeField] private float focusedOverlayOpacity = 0.6f;
         [SerializeField] private float focusedColorTolerance = 0.0025f;
+        [SerializeField] private float overlayYawNudgeDegrees = 0f;
+        [SerializeField] private float overlayVerticalNudgeDegrees = 0f;
 
         private AOILookup aoiLookup;
         private SphericalMapper sphericalMapper;
@@ -40,8 +42,12 @@ namespace AOI360.Runtime.Core
         private Color lastFocusedAoiColor = Color.clear;
         private float lastYawOffsetDegrees = float.NaN;
         private float lastVerticalOffsetDegrees = float.NaN;
+        private float lastOverlayYawNudgeDegrees = float.NaN;
+        private float lastOverlayVerticalNudgeDegrees = float.NaN;
         private bool? lastHorizontalFlip;
         private bool? lastVerticalFlip;
+        private Vector2 lastProjectionScale = new Vector2(float.NaN, float.NaN);
+        private Vector2 lastProjectionOffset = new Vector2(float.NaN, float.NaN);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void RegisterSceneHook()
@@ -346,12 +352,18 @@ namespace AOI360.Runtime.Core
 
             if (material.HasProperty("_YawOffsetDegrees"))
             {
-                material.SetFloat("_YawOffsetDegrees", sphericalMapper != null ? sphericalMapper.YawOffsetDegrees : 0f);
+                material.SetFloat(
+                    "_YawOffsetDegrees",
+                    (sphericalMapper != null ? sphericalMapper.YawOffsetDegrees : 0f) + overlayYawNudgeDegrees
+                );
             }
 
             if (material.HasProperty("_VerticalOffsetDegrees"))
             {
-                material.SetFloat("_VerticalOffsetDegrees", sphericalMapper != null ? sphericalMapper.VerticalOffsetDegrees : 0f);
+                material.SetFloat(
+                    "_VerticalOffsetDegrees",
+                    (sphericalMapper != null ? sphericalMapper.VerticalOffsetDegrees : 0f) + overlayVerticalNudgeDegrees
+                );
             }
 
             if (material.HasProperty("_FlipHorizontal"))
@@ -362,6 +374,18 @@ namespace AOI360.Runtime.Core
             if (material.HasProperty("_FlipVertical"))
             {
                 material.SetFloat("_FlipVertical", sphericalMapper != null && sphericalMapper.FlipVertically ? 1f : 0f);
+            }
+
+            if (material.HasProperty("_ProjectionScale"))
+            {
+                Vector2 projectionScale = videoPlayback != null ? videoPlayback.ProjectionScale : Vector2.one;
+                material.SetVector("_ProjectionScale", new Vector4(projectionScale.x, projectionScale.y, 0f, 0f));
+            }
+
+            if (material.HasProperty("_ProjectionOffset"))
+            {
+                Vector2 projectionOffset = videoPlayback != null ? videoPlayback.ProjectionOffset : Vector2.zero;
+                material.SetVector("_ProjectionOffset", new Vector4(projectionOffset.x, projectionOffset.y, 0f, 0f));
             }
 
             if (material.HasProperty("_BaseOpacity"))
@@ -439,23 +463,38 @@ namespace AOI360.Runtime.Core
 
         private bool HasProjectionCalibrationChanged()
         {
+            Vector2 currentProjectionScale = videoPlayback != null ? videoPlayback.ProjectionScale : Vector2.one;
+            Vector2 currentProjectionOffset = videoPlayback != null ? videoPlayback.ProjectionOffset : Vector2.zero;
+
             if (sphericalMapper == null)
             {
-                return false;
+                return !Mathf.Approximately(lastOverlayYawNudgeDegrees, overlayYawNudgeDegrees) ||
+                       !Mathf.Approximately(lastOverlayVerticalNudgeDegrees, overlayVerticalNudgeDegrees) ||
+                       !VectorsApproximatelyEqual(lastProjectionScale, currentProjectionScale) ||
+                       !VectorsApproximatelyEqual(lastProjectionOffset, currentProjectionOffset);
             }
 
             return !Mathf.Approximately(lastYawOffsetDegrees, sphericalMapper.YawOffsetDegrees) ||
                    !Mathf.Approximately(lastVerticalOffsetDegrees, sphericalMapper.VerticalOffsetDegrees) ||
+                   !Mathf.Approximately(lastOverlayYawNudgeDegrees, overlayYawNudgeDegrees) ||
+                   !Mathf.Approximately(lastOverlayVerticalNudgeDegrees, overlayVerticalNudgeDegrees) ||
+                   !VectorsApproximatelyEqual(lastProjectionScale, currentProjectionScale) ||
+                   !VectorsApproximatelyEqual(lastProjectionOffset, currentProjectionOffset) ||
                    lastHorizontalFlip != sphericalMapper.FlipHorizontally ||
                    lastVerticalFlip != sphericalMapper.FlipVertically;
         }
 
         private void CacheProjectionCalibrationState()
         {
+            lastProjectionScale = videoPlayback != null ? videoPlayback.ProjectionScale : Vector2.one;
+            lastProjectionOffset = videoPlayback != null ? videoPlayback.ProjectionOffset : Vector2.zero;
+
             if (sphericalMapper == null)
             {
                 lastYawOffsetDegrees = 0f;
                 lastVerticalOffsetDegrees = 0f;
+                lastOverlayYawNudgeDegrees = overlayYawNudgeDegrees;
+                lastOverlayVerticalNudgeDegrees = overlayVerticalNudgeDegrees;
                 lastHorizontalFlip = false;
                 lastVerticalFlip = false;
                 return;
@@ -463,8 +502,15 @@ namespace AOI360.Runtime.Core
 
             lastYawOffsetDegrees = sphericalMapper.YawOffsetDegrees;
             lastVerticalOffsetDegrees = sphericalMapper.VerticalOffsetDegrees;
+            lastOverlayYawNudgeDegrees = overlayYawNudgeDegrees;
+            lastOverlayVerticalNudgeDegrees = overlayVerticalNudgeDegrees;
             lastHorizontalFlip = sphericalMapper.FlipHorizontally;
             lastVerticalFlip = sphericalMapper.FlipVertically;
+        }
+
+        private static bool VectorsApproximatelyEqual(Vector2 a, Vector2 b)
+        {
+            return Mathf.Approximately(a.x, b.x) && Mathf.Approximately(a.y, b.y);
         }
 
         private void SyncOverlaySphereToVideoSphere()
@@ -484,7 +530,13 @@ namespace AOI360.Runtime.Core
                 overlaySphere.transform.SetParent(videoSphere.transform.parent, false);
                 overlaySphere.transform.localPosition = videoSphere.transform.localPosition;
                 overlaySphere.transform.localRotation = videoSphere.transform.localRotation;
-                overlaySphere.transform.localScale = videoSphere.transform.localScale;
+                // Keep the AOI shell slightly inside the video shell so the overlay
+                // does not end up coplanar with the video surface.
+                overlaySphere.transform.localScale = new Vector3(
+                    overlaySphereRadius * 2f,
+                    overlaySphereRadius * 2f,
+                    overlaySphereRadius * 2f
+                );
                 return;
             }
 

@@ -60,5 +60,8 @@ def main() -> None:
 
     print(f"[aoi360_analytics] Normalized rows: {export_paths['raw_rows_path']}")
     print(f"[aoi360_analytics] Session summary: {export_paths['session_summary_path']}")
+    print(f"[aoi360_analytics] Participant summary: {export_paths['participant_summary_path']}")
+    print(f"[aoi360_analytics] Video summary: {export_paths['video_summary_path']}")
     print(f"[aoi360_analytics] AOI summary: {export_paths['aoi_summary_path']}")
+    print(f"[aoi360_analytics] Transition summary: {export_paths['transition_summary_path']}")
     print(f"[aoi360_analytics] Snapshot: {export_paths['summary_json_path']}")

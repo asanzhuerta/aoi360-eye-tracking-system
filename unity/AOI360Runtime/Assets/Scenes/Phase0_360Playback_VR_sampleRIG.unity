@@ -277,10 +277,8 @@ MonoBehaviour:
   sphericalMapper: {fileID: 1536635697}
   aoiMapTexture: {fileID: 2800000, guid: c9c9f6c3198a7ea40a8e1f71d728803a, type: 3}
   aoiMetadataJson: {fileID: 0}
-  encodingMode: 0
   autoLoadMetadataFromStreamingAssets: 1
   metadataStreamingFolder: AOIMaps
-  grayscaleTolerance: 0.01
   neighborhoodRadiusDegrees: 1.5
   neighborhoodSamples: 8
   throttleConfidenceUpdates: 1
@@ -709,6 +707,8 @@ MonoBehaviour:
   runtimeTextureWidth: 4096
   runtimeTextureHeight: 2048
   forceSkyboxOutput: 1
+  useImmersiveSphereOutput: 1
+  followPresentationCameraPosition: 1
   logVideoEvents: 1
   allowFrameDrop: 1
 --- !u!328 &730990566
@@ -931,10 +931,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AOI360.Runtime.Core.Phase0Bootstrap
   createAoiOverlay: 1
-  overlaySphereRadius: 5
+  overlaySphereRadius: 4.98
   overlayOpacity: 0.05
   focusedOverlayOpacity: 0.1
   focusedColorTolerance: 0.0025
+  overlayYawNudgeDegrees: 270
+  overlayVerticalNudgeDegrees: 0
 --- !u!1 &1436281264
 GameObject:
   m_ObjectHideFlags: 0
@@ -1013,10 +1015,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::AOI360.Runtime.Mapping.SphericalMapper
   gazeDirectionSource: {fileID: 2078217318}
   allowFallbackToTransformSource: 1
-  yawOffsetDegrees: 180
-  verticalOffsetDegrees: 15
+  yawOffsetDegrees: 0
+  verticalOffsetDegrees: 0
   flipHorizontally: 0
-  flipVertically: 1
+  flipVertically: 0
   logValues: 1
   logEveryNFrames: 30
 --- !u!1 &1560640327

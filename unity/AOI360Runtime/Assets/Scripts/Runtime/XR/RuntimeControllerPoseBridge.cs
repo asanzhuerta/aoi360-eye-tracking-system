@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
@@ -27,6 +28,7 @@ namespace AOI360.Runtime.XR
         private const string RightControllerPrefabPath =
             "Assets/Samples/VIVE OpenXR Plugin/2.5.0/VIVE OpenXR Samples/Samples/Commons/VRSPrefabs/Controller/Focus3_Right.prefab";
         private static bool sceneHookRegistered;
+        private static readonly Dictionary<int, Material> CompatibleMaterialCache = new();
 
         private InputAction leftTrackedAction;
         private InputAction leftDevicePositionAction;
@@ -363,12 +365,15 @@ namespace AOI360.Runtime.XR
             if (existingRenderer != null)
             {
                 Transform visualRoot = ResolveVisualRootUnderAnchor(existingRenderer.transform, anchor);
-                return visualRoot != null ? visualRoot.gameObject : existingRenderer.gameObject;
+                GameObject existingVisual = visualRoot != null ? visualRoot.gameObject : existingRenderer.gameObject;
+                ApplyCompatibleControllerMaterials(existingVisual, fallbackColor);
+                return existingVisual;
             }
 
             GameObject prefabInstance = TryInstantiateEditorPrefab(name, anchor, prefabPath);
             if (prefabInstance != null)
             {
+                ApplyCompatibleControllerMaterials(prefabInstance, fallbackColor);
                 return prefabInstance;
             }
 
@@ -458,6 +463,139 @@ namespace AOI360.Runtime.XR
             Material material = new Material(shader);
             material.color = color;
             return material;
+        }
+
+        private static void ApplyCompatibleControllerMaterials(GameObject root, Color fallbackColor)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer renderer = renderers[i];
+                Material[] sourceMaterials = renderer.sharedMaterials;
+                if (sourceMaterials == null || sourceMaterials.Length == 0)
+                {
+                    continue;
+                }
+
+                Material[] compatibleMaterials = new Material[sourceMaterials.Length];
+                for (int materialIndex = 0; materialIndex < sourceMaterials.Length; materialIndex++)
+                {
+                    compatibleMaterials[materialIndex] = CreateCompatibleRuntimeMaterial(
+                        sourceMaterials[materialIndex],
+                        fallbackColor
+                    );
+                }
+
+                renderer.sharedMaterials = compatibleMaterials;
+                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
+            }
+        }
+
+        private static Material CreateCompatibleRuntimeMaterial(Material sourceMaterial, Color fallbackColor)
+        {
+            if (sourceMaterial == null)
+            {
+                return CreateSharedMaterial(fallbackColor);
+            }
+
+            int cacheKey = sourceMaterial.GetInstanceID();
+            if (CompatibleMaterialCache.TryGetValue(cacheKey, out Material cachedMaterial) && cachedMaterial != null)
+            {
+                return cachedMaterial;
+            }
+
+            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null)
+            {
+                shader = Shader.Find("Universal Render Pipeline/Unlit");
+            }
+
+            if (shader == null)
+            {
+                shader = Shader.Find("Standard");
+            }
+
+            Material compatibleMaterial = new Material(shader)
+            {
+                name = $"{sourceMaterial.name}_RuntimeCompatible"
+            };
+
+            Texture baseTexture = sourceMaterial.HasProperty("_BaseMap")
+                ? sourceMaterial.GetTexture("_BaseMap")
+                : sourceMaterial.HasProperty("_MainTex")
+                    ? sourceMaterial.GetTexture("_MainTex")
+                    : null;
+
+            Color baseColor = fallbackColor;
+            if (sourceMaterial.HasProperty("_BaseColor"))
+            {
+                baseColor = sourceMaterial.GetColor("_BaseColor");
+            }
+            else if (sourceMaterial.HasProperty("_Color"))
+            {
+                baseColor = sourceMaterial.GetColor("_Color");
+            }
+
+            if (compatibleMaterial.HasProperty("_BaseMap"))
+            {
+                compatibleMaterial.SetTexture("_BaseMap", baseTexture);
+            }
+
+            if (compatibleMaterial.HasProperty("_MainTex"))
+            {
+                compatibleMaterial.SetTexture("_MainTex", baseTexture);
+            }
+
+            if (compatibleMaterial.HasProperty("_BaseColor"))
+            {
+                compatibleMaterial.SetColor("_BaseColor", baseColor);
+            }
+
+            if (compatibleMaterial.HasProperty("_Color"))
+            {
+                compatibleMaterial.SetColor("_Color", baseColor);
+            }
+
+            bool isTransparentSource = sourceMaterial.renderQueue >= (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            if (isTransparentSource && compatibleMaterial.HasProperty("_Surface"))
+            {
+                compatibleMaterial.SetFloat("_Surface", 1f);
+            }
+
+            if (isTransparentSource && compatibleMaterial.HasProperty("_Blend"))
+            {
+                compatibleMaterial.SetFloat("_Blend", 0f);
+            }
+
+            if (isTransparentSource && compatibleMaterial.HasProperty("_SrcBlend"))
+            {
+                compatibleMaterial.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            }
+
+            if (isTransparentSource && compatibleMaterial.HasProperty("_DstBlend"))
+            {
+                compatibleMaterial.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            }
+
+            if (isTransparentSource && compatibleMaterial.HasProperty("_ZWrite"))
+            {
+                compatibleMaterial.SetFloat("_ZWrite", 0f);
+            }
+
+            if (isTransparentSource)
+            {
+                compatibleMaterial.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+                compatibleMaterial.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            }
+
+            CompatibleMaterialCache[cacheKey] = compatibleMaterial;
+            return compatibleMaterial;
         }
 
         private static void UpdateController(
