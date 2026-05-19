@@ -14,7 +14,7 @@ Instead, it exports one row per committed fixation step. The current runtime use
 |---|---|---|---|
 | `participant_id` | Participant identifier | text | Subject identifier used in the experiment |
 | `session_id` | Session identifier | text | Session or run identifier |
-| `video_id` | Video identifier | text | Name or identifier of the 360 stimulus |
+| `video_id` | Video identifier | text | Base name of the selected 360 video without extension, so it matches the offline manifests |
 | `timestamp_ms` | Fixation event timestamp | milliseconds | Quantized to the current fixation cadence |
 | `frame_index` | Video frame index | integer | Current Unity `VideoPlayer` frame when the fixation row is exported |
 | `origin_x` | Gaze origin X | meters | World-space origin of the gaze ray |

@@ -90,7 +90,7 @@ Expected result:
 2. End the experiment with the right controller `A` button or the fallback keyboard/controller binding.
 3. Confirm the completion message appears.
 4. Confirm the scene returns to `Initial_Scene` after about 5 seconds.
-5. Check `data/exports/csv/` for the generated CSV.
+5. Check `data/exports/` for the generated CSV.
 
 Expected result:
 

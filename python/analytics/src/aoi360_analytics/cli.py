@@ -10,7 +10,7 @@ import pandas as pd
 from aoi360_analytics.runtime_exports import analyze_runtime_exports, export_runtime_analytics
 
 
-DEFAULT_OUTPUT_ROOT = Path("data") / "exports" / "csv" / "analytics"
+DEFAULT_OUTPUT_ROOT = Path("data") / "exports" / "analytics"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-dir",
         default=None,
-        help="Output directory for normalized rows and summary tables. Defaults to a timestamped folder in data/exports/csv/analytics.",
+        help="Output directory for normalized rows and summary tables. Defaults to a timestamped folder in data/exports/analytics.",
     )
     return parser
 
@@ -59,9 +59,12 @@ def main() -> None:
     )
 
     print(f"[aoi360_analytics] Normalized rows: {export_paths['raw_rows_path']}")
+    print(f"[aoi360_analytics] Source file summary: {export_paths['source_file_summary_path']}")
     print(f"[aoi360_analytics] Session summary: {export_paths['session_summary_path']}")
+    print(f"[aoi360_analytics] Session quality: {export_paths['session_quality_path']}")
     print(f"[aoi360_analytics] Participant summary: {export_paths['participant_summary_path']}")
     print(f"[aoi360_analytics] Video summary: {export_paths['video_summary_path']}")
     print(f"[aoi360_analytics] AOI summary: {export_paths['aoi_summary_path']}")
+    print(f"[aoi360_analytics] Video x AOI summary: {export_paths['video_aoi_summary_path']}")
     print(f"[aoi360_analytics] Transition summary: {export_paths['transition_summary_path']}")
     print(f"[aoi360_analytics] Snapshot: {export_paths['summary_json_path']}")

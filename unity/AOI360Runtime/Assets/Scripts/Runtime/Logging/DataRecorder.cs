@@ -212,7 +212,7 @@ namespace AOI360.Runtime.Logging
         {
             if (ExperimentStimulusCatalog.TryResolveRepositoryRoot(out string repositoryRoot))
             {
-                return Path.Combine(repositoryRoot, "data", "exports", "csv");
+                return Path.Combine(repositoryRoot, "data", "exports");
             }
 
             return Path.Combine(Application.persistentDataPath, "Exports");
@@ -301,12 +301,22 @@ namespace AOI360.Runtime.Logging
 
         private string ResolveVideoId()
         {
-            if (videoPlayback != null && !string.IsNullOrWhiteSpace(videoPlayback.VideoStem))
+            // Keep the runtime CSV aligned with the offline manifests by exporting
+            // the video base name without the container extension.
+            if (videoPlayback != null)
             {
-                return videoPlayback.VideoStem;
+                if (!string.IsNullOrWhiteSpace(videoPlayback.ActiveVideoPath))
+                {
+                    return Path.GetFileNameWithoutExtension(videoPlayback.ActiveVideoPath);
+                }
+
+                if (!string.IsNullOrWhiteSpace(videoPlayback.VideoFileName))
+                {
+                    return Path.GetFileNameWithoutExtension(videoPlayback.VideoFileName);
+                }
             }
 
-            return videoId;
+            return Path.GetFileNameWithoutExtension(videoId);
         }
 
         private string Escape(string value)

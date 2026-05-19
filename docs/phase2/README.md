@@ -51,7 +51,7 @@ Recommended runtime flow in the Editor:
 3. Select one processed stimulus from the runtime UI.
 4. Let the countdown finish while video and AOI data prepare.
 5. Run the headset test and end the experiment with the configured controller binding.
-6. Check the exported CSV under `data/exports/csv/`.
+6. Check the exported CSV under `data/exports/`.
 
 If the runtime cannot resolve the repository root, the CSV exporter falls back to `Application.persistentDataPath/Exports`. That fallback is mainly for packaged builds or unusual folder layouts.
 
