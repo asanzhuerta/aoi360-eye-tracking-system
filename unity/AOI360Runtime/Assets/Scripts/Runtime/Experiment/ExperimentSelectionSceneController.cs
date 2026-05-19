@@ -24,7 +24,7 @@ namespace AOI360.Runtime.Experiment
 
         private static readonly string[] PlaybackSceneCandidates =
         {
-            "Phase0_360Playback_VR_sampleRIG"
+            "Phase2_360Playback_VR_sampleRIG"
         };
 
         private const string RuntimeObjectName = "ExperimentSelectionSceneController_Runtime";

@@ -248,7 +248,7 @@ namespace AOI360.Runtime.AOI
         {
             EnsureMetadataLoaded();
 
-            // Phase 0 now relies on the exact-color metadata contract produced by the
+            // Phase 2 now relies on the exact-color metadata contract produced by the
             // offline pipeline. Keep the lookup deterministic by resolving ids only
             // through the manifest-driven color table.
             if (colorToDefinition.TryGetValue(ColorToKey(pixel32), out AoiDefinition definition))

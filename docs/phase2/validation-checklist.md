@@ -1,4 +1,4 @@
-# Phase 0 Validation Checklist
+# Phase 2 Validation Checklist
 
 Use this checklist when validating the current Unity runtime on device.
 
@@ -10,7 +10,7 @@ Use this checklist when validating the current Unity runtime on device.
 - Confirm the menu canvas stays in the same place in the scene even if you return while looking in a different direction
 - Return from the experiment scene and confirm the menu still appears in the same fixed world-space location instead of reattaching to the latest headset view
 - Confirm controller rays are visible again after returning to `Initial_Scene`
-- Confirm `Phase0_360Playback_VR_sampleRIG` loads
+- Confirm `Phase2_360Playback_VR_sampleRIG` loads
 - Confirm a `5 -> 0` countdown appears as soon as the scene loads
 - Confirm the scene starts with a black 360 background instead of showing a stale frame from the previous run
 - Confirm the 360 video prepares successfully during the countdown
@@ -78,4 +78,4 @@ If AOI lookup or overlay fails, verify the AOI texture import settings:
 - `Filter Mode Point`
 - `Compression None`
 
-Most apparent AOI-map bugs in Phase 0 come from importing a data texture as if it were a regular visual texture.
+Most apparent AOI-map bugs in Phase 2 come from importing a data texture as if it were a regular visual texture.

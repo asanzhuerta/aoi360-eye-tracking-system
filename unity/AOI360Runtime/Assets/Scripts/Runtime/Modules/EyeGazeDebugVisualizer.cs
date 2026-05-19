@@ -8,7 +8,7 @@ using UnityEngine.Rendering;
 
 namespace EyeGaze.Runtime.Modules
 {
-    // Debug visualization plus a lightweight fixation detector for the Phase 0 runtime.
+    // Debug visualization plus a lightweight fixation detector for the Phase 2 runtime.
     public class EyeGazeDebugVisualizer : EyeGazeModuleBase
     {
         [Header("Debug")]

@@ -1,6 +1,6 @@
-# Phase 0 Documentation
+# Phase 2 Documentation
 
-Phase 0 is the first stable Unity prototype of the AOI360 system.
+Phase 2 is the stable Unity runtime stage of the AOI360 system.
 
 Its purpose is to validate the runtime experiment loop before the offline AOI generation pipeline is connected:
 
@@ -11,19 +11,9 @@ Its purpose is to validate the runtime experiment loop before the offline AOI ge
 - visualize fixations in the headset
 - export fixation-based CSV data
 
-## Phase mapping
-
-This folder keeps the original prototype naming, but in the current project plan it corresponds to:
-
-- `Phase 2` -> Unity runtime playback, gaze capture, AOI lookup, and CSV export
-
-The active runtime scene still uses the historical name:
-
-- `Phase0_360Playback_VR_sampleRIG`
-
 ## Scope
 
-Phase 0 does not yet generate AOIs automatically. AOI maps are still manual or handcrafted test assets, but the runtime contract is already structured so the future Python pipeline can drop in generated maps and metadata without rewriting the Unity side.
+Phase 2 does not yet generate AOIs automatically inside Unity. AOI maps are still produced offline, but the runtime contract is already structured so the Python pipeline can drop in generated maps and metadata without rewriting the Unity side.
 
 ## Key outputs
 
@@ -67,10 +57,10 @@ If the runtime cannot resolve the repository root, the CSV exporter falls back t
 
 ## Expected headset flow
 
-The current documented Phase 0 flow is:
+The current documented Phase 2 flow is:
 
 1. choose a processed stimulus in `Initial_Scene`
-2. load `Phase0_360Playback_VR_sampleRIG`
+2. load `Phase2_360Playback_VR_sampleRIG`
 3. show a `5 -> 0` countdown while video, AOI metadata, AOI maps, and eye-gaze runtime finish preparing
 4. start the video only after the countdown has completed
 5. export the experiment CSV when the operator ends the session with the right controller `A` button

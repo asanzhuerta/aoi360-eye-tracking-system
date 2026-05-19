@@ -1,12 +1,12 @@
-# Unity Runtime - Phase 0
+# Unity Runtime - Phase 2
 
 ## Active scene
 
-The production scene for Phase 0 is:
+The production scene for Phase 2 is:
 
-- `Assets/Scenes/Phase0_360Playback_VR_sampleRIG.unity`
+- `Assets/Scenes/Phase2_360Playback_VR_sampleRIG.unity`
 
-`Assets/Scenes/Phase0_360Playback_VR.unity` is now treated as a legacy scene and is no longer part of the normal runtime path.
+`Assets/Scenes/Phase2_360Playback_VR.unity` is now treated as a legacy scene and is no longer part of the normal runtime path.
 
 ## Runtime flow
 
@@ -14,7 +14,7 @@ The intended headset flow is:
 
 1. `Initial_Scene` shows the runtime-generated stimulus list.
    - the selection canvas stays fixed in the scene instead of following the current head direction
-2. Selecting a stimulus stores the experiment session state and loads `Phase0_360Playback_VR_sampleRIG`.
+2. Selecting a stimulus stores the experiment session state and loads `Phase2_360Playback_VR_sampleRIG`.
 3. As soon as the experiment scene loads, the runtime must:
    - start a `5 -> 0` countdown overlay
    - show a black 360 background while the selected render texture is still being prepared
@@ -27,7 +27,7 @@ The intended headset flow is:
 
 ## Runtime injection
 
-Some Phase 0 modules are authored directly in `Phase0_360Playback_VR_sampleRIG`, but others are injected at runtime.
+Some Phase 2 modules are authored directly in `Phase2_360Playback_VR_sampleRIG`, but others are injected at runtime.
 
 Scene-authored modules:
 - `VideoPlayback`
@@ -37,7 +37,7 @@ Scene-authored modules:
 - `SphericalMapper`
 - `EyeGazeSystem`
 - `EyeGazeDebugVisualizer`
-- `Phase0Bootstrap`
+- `Phase2Bootstrap`
 
 Runtime-injected modules:
 - `ExperimentPlaybackFlowController`
@@ -89,7 +89,7 @@ Tracking sources:
 - UV coordinates on the equirectangular map
 
 Calibration note:
-- `Phase0_360Playback_VR_sampleRIG` currently uses the same editor calibration that the legacy VR scene used successfully: `yawOffsetDegrees = 180`, `verticalOffsetDegrees = 15`, `flipVertically = 1`
+- `Phase2_360Playback_VR_sampleRIG` now uses the current editor calibration committed in the scene file
 
 ### AOI lookup
 
@@ -99,7 +99,7 @@ Production mode:
 - `MetadataExactColor`
 
 The runtime now treats the manifest-driven exact-color contract as the only
-supported lookup path for the active Phase 0 / Phase 2 flow.
+supported lookup path for the active Phase 2 flow.
 
 ### AOI sequence loading
 
@@ -113,7 +113,7 @@ Responsibilities:
 
 ### AOI overlay
 
-`Phase0Bootstrap` creates a runtime sphere inside the 360 environment and renders a semi-transparent AOI overlay on top of the video.
+`Phase2Bootstrap` creates a runtime sphere inside the 360 environment and renders a semi-transparent AOI overlay on top of the video.
 
 Behavior:
 - invisible background for non-AOI pixels
@@ -121,7 +121,7 @@ Behavior:
 
 ### Controller and UI pose bridge
 
-`RuntimeControllerPoseBridge` is responsible for keeping `LeftHand`, `RightHand`, `LeftRay`, and `RightRay` alive across both `Initial_Scene` and `Phase0_360Playback_VR_sampleRIG`.
+`RuntimeControllerPoseBridge` is responsible for keeping `LeftHand`, `RightHand`, `LeftRay`, and `RightRay` alive across both `Initial_Scene` and `Phase2_360Playback_VR_sampleRIG`.
 
 Current expectations:
 - when changing scenes, the new scene must always receive a fresh bridge instance
@@ -169,7 +169,7 @@ Manual termination behavior:
 
 ## Why fixation-based logging
 
-Phase 0 uses fixation commits instead of full-rate raw streaming because the immediate goal is to validate:
+Phase 2 uses fixation commits instead of full-rate raw streaming because the immediate goal is to validate:
 - AOI alignment
 - fixation timing
 - experimental flow

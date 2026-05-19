@@ -17,7 +17,7 @@ namespace AOI360.Runtime.AOI
         // lean by preferring the packed RGB stream over per-keyframe PNG loads.
         private static readonly string[] TargetSceneNames =
         {
-            "Phase0_360Playback_VR_sampleRIG"
+            "Phase2_360Playback_VR_sampleRIG"
         };
         private const string RuntimeLoaderName = "AOISequenceRuntimeLoader_Runtime";
         private static bool sceneHookRegistered;

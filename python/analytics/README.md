@@ -65,7 +65,7 @@ The analytics script writes one timestamped folder under `data/exports/csv/analy
 
 ## Metric notes
 
-The current AOI summary is intentionally simple and aligned with the Unity Phase 0 export:
+The current AOI summary is intentionally simple and aligned with the Unity Phase 2 export:
 
 - `fixation_steps`: number of valid fixation rows assigned to the AOI
 - `dwell_time_ms`: `fixation_steps * fixation_step_ms_estimate`

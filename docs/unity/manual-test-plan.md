@@ -1,6 +1,6 @@
 # Unity Manual Test Plan
 
-This document turns the current Phase 0 checklist into a practical regression test flow for the Unity runtime.
+This document turns the current Phase 2 checklist into a practical regression test flow for the Unity runtime.
 
 ## Scope
 
@@ -21,7 +21,7 @@ Use this plan when checking whether the current Unity experiment loop still beha
    - `data/processed/metadata/<video_name>_aoi_sequence_manifest.json`
 2. Confirm the active scene flow is still:
    - `Initial_Scene`
-   - `Phase0_360Playback_VR_sampleRIG`
+   - `Phase2_360Playback_VR_sampleRIG`
 3. In the Unity Console, clear old logs before the test.
 4. If you changed AOI textures, re-check the import settings:
    - `Read/Write Enabled`
@@ -46,7 +46,7 @@ Expected result:
 ## Scene transition and countdown
 
 1. Select one stimulus.
-2. Confirm `Phase0_360Playback_VR_sampleRIG` loads.
+2. Confirm `Phase2_360Playback_VR_sampleRIG` loads.
 3. Confirm the countdown overlay appears immediately.
 4. Confirm the background starts black while the video prepares.
 5. Confirm playback does not start before the countdown ends.

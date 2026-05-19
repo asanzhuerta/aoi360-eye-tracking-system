@@ -1,10 +1,10 @@
-# Phase 0 CSV Schema
+# Phase 2 CSV Schema
 
 This document describes the fixation-based CSV exported by the current Unity runtime.
 
 ## Export model
 
-Phase 0 does not currently export raw per-frame gaze samples.
+Phase 2 does not currently export raw per-frame gaze samples.
 
 Instead, it exports one row per committed fixation step. The current runtime uses a fixation commit cadence of `250 ms`, so `timestamp_ms` follows that fixation timeline rather than the full display frame rate.
 

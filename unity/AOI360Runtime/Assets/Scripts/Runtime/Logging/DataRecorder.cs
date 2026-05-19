@@ -17,7 +17,7 @@ namespace AOI360.Runtime.Logging
     {
         // DataRecorder persists the fixation-based contract consumed by the
         // analytics stage. It records only committed fixation steps so the CSV
-        // remains aligned with the current Phase 0 / Phase 2 runtime design.
+        // remains aligned with the current Phase 2 runtime design.
         [Header("References")]
         [SerializeField] private VideoPlayback videoPlayback;
         [SerializeField] private SphericalMapper sphericalMapper;
@@ -32,7 +32,7 @@ namespace AOI360.Runtime.Logging
         [SerializeField] private string participantId = "P001";
         [SerializeField] private string sessionId = "S001";
         [SerializeField] private string videoId = "sample360";
-        [SerializeField] private string outputFileName = "phase0_gaze_log.csv";
+        [SerializeField] private string outputFileName = "phase2_gaze_log.csv";
 
         [Header("Debug")]
         [SerializeField] private bool logRecordingState = true;
@@ -86,7 +86,7 @@ namespace AOI360.Runtime.Logging
                 return;
             }
 
-            // Phase 0 exports one row per committed fixation step instead of one row per frame.
+            // Phase 2 exports one row per committed fixation step instead of one row per frame.
             // This keeps the dataset aligned with the current experimental prototype and debug view.
             lastExportedFixationSequence = debugVisualizer.LatestCommittedFixationSequence;
 

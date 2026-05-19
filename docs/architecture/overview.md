@@ -24,7 +24,7 @@ The system is intentionally split so that computer vision and segmentation stay 
 
 ## Current runtime implementation
 
-Phase 0 is centered on `Phase0_360Playback_VR_sampleRIG` and includes:
+Phase 2 is centered on `Phase2_360Playback_VR_sampleRIG` and includes:
 
 - skybox-based 360 playback
 - OpenXR eye gaze input
@@ -35,4 +35,4 @@ Phase 0 is centered on `Phase0_360Playback_VR_sampleRIG` and includes:
 - fixation trail visualization
 - CSV export for later analysis
 
-See `docs/phase0/` for runtime-specific details.
+See `docs/phase2/` for runtime-specific details.

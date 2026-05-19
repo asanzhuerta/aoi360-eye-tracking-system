@@ -161,7 +161,7 @@ The rebuild script and GUI now auto-derive these paths from the selected video s
 
 ### Current Unity runtime
 
-The current Unity Phase 0 runtime is ready for:
+The current Unity Phase 2 runtime is ready for:
 
 1. copy the PNG into `unity/AOI360Runtime/Assets/Textures/AOIMaps`
 2. copy the metadata JSON into `unity/AOI360Runtime/Assets/StreamingAssets/AOIMaps`
@@ -199,7 +199,7 @@ Copy-Item data\processed\metadata\video_360_aoi_sequence_manifest.json unity\AOI
 Copy-Item data\processed\metadata\video_360_aoi_sequence_rgb24.bin unity\AOI360Runtime\Assets\StreamingAssets\AOIMaps\video_360\
 ```
 
-That per-frame layout is now consumed by the current Unity runtime loader keyed by `VideoPlayer.frame`, and the binary runtime pack is the preferred fast path for Phase 0 playback tests on standalone VR hardware.
+That per-frame layout is now consumed by the current Unity runtime loader keyed by `VideoPlayer.frame`, and the binary runtime pack is the preferred fast path for Phase 2 playback tests on standalone VR hardware.
 
 ## Prompt presets
 

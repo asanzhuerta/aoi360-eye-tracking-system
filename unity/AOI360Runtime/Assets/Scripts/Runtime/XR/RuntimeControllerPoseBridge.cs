@@ -18,7 +18,7 @@ namespace AOI360.Runtime.XR
         private static readonly string[] TargetSceneNames =
         {
             "Initial_Scene",
-            "Phase0_360Playback_VR_sampleRIG"
+            "Phase2_360Playback_VR_sampleRIG"
         };
 
         private const string RuntimeObjectName = "RuntimeControllerPoseBridge_Runtime";

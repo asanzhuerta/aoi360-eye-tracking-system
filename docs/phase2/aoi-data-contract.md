@@ -1,6 +1,6 @@
 # AOI Data Contract
 
-This document defines the AOI data contract that Unity Phase 0 expects and that the future Python pipeline should produce.
+This document defines the AOI data contract that Unity Phase 2 expects and that the Python pipeline should produce.
 
 ## Goal
 

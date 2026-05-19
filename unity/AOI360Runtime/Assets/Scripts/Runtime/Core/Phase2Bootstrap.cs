@@ -9,16 +9,16 @@ using UnityEngine.SceneManagement;
 namespace AOI360.Runtime.Core
 {
     [DefaultExecutionOrder(-200)]
-    public class Phase0Bootstrap : MonoBehaviour
+    public class Phase2Bootstrap : MonoBehaviour
     {
         // This bootstrap owns the optional AOI overlay layer used for in-headset
         // validation. It should stay visually helpful without competing with the
         // main video playback path for CPU time.
         private static readonly string[] TargetSceneNames =
         {
-            "Phase0_360Playback_VR_sampleRIG"
+            "Phase2_360Playback_VR_sampleRIG"
         };
-        private const string RuntimeBootstrapName = "Phase0Bootstrap_Runtime";
+        private const string RuntimeBootstrapName = "Phase2Bootstrap_Runtime";
         private static bool sceneHookRegistered;
 
         [Header("Overlay")]
@@ -79,13 +79,13 @@ namespace AOI360.Runtime.Core
                 return;
             }
 
-            if (FindFirstObjectByType<Phase0Bootstrap>() != null)
+            if (FindFirstObjectByType<Phase2Bootstrap>() != null)
             {
                 return;
             }
 
             GameObject bootstrap = new GameObject(RuntimeBootstrapName);
-            bootstrap.AddComponent<Phase0Bootstrap>();
+            bootstrap.AddComponent<Phase2Bootstrap>();
         }
 
         private void Awake()
@@ -211,7 +211,7 @@ namespace AOI360.Runtime.Core
             Shader overlayShader = ResolveTransparentShader();
             if (overlayShader == null)
             {
-                Debug.LogWarning("[Phase0Bootstrap] Could not find a transparent runtime shader for AOI overlay.");
+                Debug.LogWarning("[Phase2Bootstrap] Could not find a transparent runtime shader for AOI overlay.");
                 return;
             }
 

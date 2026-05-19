@@ -14,12 +14,6 @@ The repository is now organized around three practical phases:
 - `Phase 2` -> Unity runtime playback, gaze capture, AOI lookup, and CSV export
 - `Phase 3` -> post-processing and analytics over the Unity runtime exports
 
-Important naming note:
-
-- the Unity runtime scene is still named `Phase0_360Playback_VR_sampleRIG`
-- the `docs/phase0/` folder still keeps the original prototype naming
-- in the current project plan, that Unity runtime corresponds to `Phase 2`
-
 ## Architecture
 
 ### 1. Offline pipeline
@@ -59,7 +53,7 @@ The install and execution manuals are now split by phase:
 - `Phase 1` manual: `python/offline/README.md`
   - installation: `Phase 1 manual: installation`
   - execution: `Phase 1 manual: execution`
-- `Phase 2` manual: `docs/phase0/README.md`
+- `Phase 2` manual: `docs/phase2/README.md`
   - installation: `Phase 2 manual: installation`
   - execution: `Phase 2 manual: execution`
 - `Phase 3` manual: `python/analytics/README.md`
@@ -70,7 +64,7 @@ If you want the direct desktop launcher for the preprocessing GUI, use:
 
 - `Launch_AOI360_Preprocess_GUI.bat`
 
-## Phase 0 goal
+## Phase 2 goal
 
 Build a stable end-to-end prototype with:
 - one 360 video in Unity
@@ -82,11 +76,11 @@ Build a stable end-to-end prototype with:
 - fixation-based CSV export
 - a documented AOI data contract for future Grounding DINO integration
 
-## Current Phase 0 status
+## Current Phase 2 status
 
-The active Unity scene is `Phase0_360Playback_VR_sampleRIG`.
+The active Unity scene is `Phase2_360Playback_VR_sampleRIG`.
 
-Phase 0 currently includes:
+Phase 2 currently includes:
 - 360 video playback on the skybox
 - AOI overlay rendering from a runtime-generated transparent sphere
 - AOI lookup through exact-color metadata maps exported by the offline pipeline
@@ -149,12 +143,12 @@ This lets Unity resolve AOIs by exact pixel color while preserving semantic meta
 
 ## Documentation
 
-See the Phase 0 documentation for implementation details:
-- `docs/phase0/README.md`
-- `docs/phase0/runtime-unity.md`
-- `docs/phase0/aoi-data-contract.md`
-- `docs/phase0/csv-schema.md`
-- `docs/phase0/validation-checklist.md`
+See the Phase 2 documentation for implementation details:
+- `docs/phase2/README.md`
+- `docs/phase2/runtime-unity.md`
+- `docs/phase2/aoi-data-contract.md`
+- `docs/phase2/csv-schema.md`
+- `docs/phase2/validation-checklist.md`
 
 ## Offline Python quick start
 
