@@ -35,9 +35,9 @@ namespace AOI360.Runtime.Experiment
         private const float SelectionCanvasMinimumHeightMeters = 1.55f;
         private const float SelectionCanvasHeightOffsetMeters = 0.18f;
 
-        private const float StimulusButtonHeight = 112f;
-        private const float StimulusButtonSpacing = 18f;
-        private const float StimulusButtonTopPadding = 8f;
+        private const float StimulusButtonHeight = 86f;
+        private const float StimulusButtonSpacing = 10f;
+        private const float StimulusButtonTopPadding = 6f;
 
         [Header("Scene UI")]
         [SerializeField] private bool preferSceneUi = false;
@@ -527,7 +527,7 @@ namespace AOI360.Runtime.Experiment
                 new Vector2(0.5f, 0.5f)
             );
 
-            modal.sizeDelta = new Vector2(1080f, 700f);
+            modal.sizeDelta = new Vector2(1080f, 820f);
             modal.anchoredPosition = Vector2.zero;
 
             Image modalImage = ExperimentRuntimeUi.AddPanelImage(
@@ -544,7 +544,7 @@ namespace AOI360.Runtime.Experiment
                 "Title",
                 modal,
                 "Selecciona el video del experimento",
-                40f,
+                34f,
                 FontStyles.Bold,
                 TextAlignmentOptions.MidlineLeft,
                 Color.white
@@ -554,7 +554,7 @@ namespace AOI360.Runtime.Experiment
             titleRect.anchorMin = new Vector2(0f, 1f);
             titleRect.anchorMax = new Vector2(1f, 1f);
             titleRect.pivot = new Vector2(0.5f, 1f);
-            titleRect.sizeDelta = new Vector2(0f, 80f);
+            titleRect.sizeDelta = new Vector2(0f, 72f);
             titleRect.anchoredPosition = new Vector2(0f, -10f);
             titleText.raycastTarget = false;
 
@@ -562,7 +562,7 @@ namespace AOI360.Runtime.Experiment
                 "Subtitle",
                 modal,
                 "Elige un estimulo procesado. Todos los botones abren la misma escena VR base y cambian el video y los AOIs. Usa el laser del mando derecho y el gatillo para confirmar.",
-                22f,
+                19f,
                 FontStyles.Normal,
                 TextAlignmentOptions.TopLeft,
                 new Color(0.82f, 0.87f, 0.96f, 0.92f)
@@ -572,8 +572,8 @@ namespace AOI360.Runtime.Experiment
             subtitleRect.anchorMin = new Vector2(0f, 1f);
             subtitleRect.anchorMax = new Vector2(1f, 1f);
             subtitleRect.pivot = new Vector2(0.5f, 1f);
-            subtitleRect.sizeDelta = new Vector2(0f, 70f);
-            subtitleRect.anchoredPosition = new Vector2(0f, -84f);
+            subtitleRect.sizeDelta = new Vector2(0f, 58f);
+            subtitleRect.anchoredPosition = new Vector2(0f, -76f);
             subtitleText.raycastTarget = false;
 
             RectTransform listPanel = ExperimentRuntimeUi.CreateUiObject(
@@ -583,14 +583,18 @@ namespace AOI360.Runtime.Experiment
                 new Vector2(1f, 1f)
             );
 
-            listPanel.offsetMin = new Vector2(40f, 140f);
-            listPanel.offsetMax = new Vector2(-40f, -170f);
+            listPanel.offsetMin = new Vector2(40f, 118f);
+            listPanel.offsetMax = new Vector2(-40f, -136f);
 
             Image listPanelImage = ExperimentRuntimeUi.AddPanelImage(
                 listPanel,
                 new Color(0.05f, 0.06f, 0.09f, 0.98f)
             );
             listPanelImage.raycastTarget = false;
+            if (listPanel.gameObject.GetComponent<RectMask2D>() == null)
+            {
+                listPanel.gameObject.AddComponent<RectMask2D>();
+            }
 
             listContentRoot = ExperimentRuntimeUi.CreateUiObject(
                 "Content",
@@ -599,8 +603,8 @@ namespace AOI360.Runtime.Experiment
                 new Vector2(1f, 1f)
             );
 
-            listContentRoot.offsetMin = new Vector2(20f, 20f);
-            listContentRoot.offsetMax = new Vector2(-20f, -20f);
+            listContentRoot.offsetMin = new Vector2(16f, 16f);
+            listContentRoot.offsetMax = new Vector2(-16f, -16f);
             listContentRoot.pivot = new Vector2(0.5f, 0.5f);
             listContentRoot.anchoredPosition = Vector2.zero;
             listContentRoot.sizeDelta = Vector2.zero;
@@ -611,7 +615,7 @@ namespace AOI360.Runtime.Experiment
                 "SourceSummary",
                 modal,
                 string.Empty,
-                22f,
+                18f,
                 FontStyles.Normal,
                 TextAlignmentOptions.BottomLeft,
                 new Color(0.78f, 0.84f, 0.93f, 0.95f)
@@ -621,15 +625,15 @@ namespace AOI360.Runtime.Experiment
             sourceSummaryRect.anchorMin = new Vector2(0f, 0f);
             sourceSummaryRect.anchorMax = new Vector2(1f, 0f);
             sourceSummaryRect.pivot = new Vector2(0.5f, 0f);
-            sourceSummaryRect.sizeDelta = new Vector2(0f, 58f);
-            sourceSummaryRect.anchoredPosition = new Vector2(0f, 86f);
+            sourceSummaryRect.sizeDelta = new Vector2(0f, 40f);
+            sourceSummaryRect.anchoredPosition = new Vector2(0f, 70f);
             sourceSummaryText.raycastTarget = false;
 
             statusText = ExperimentRuntimeUi.CreateText(
                 "Status",
                 modal,
                 "Esperando seleccion...",
-                24f,
+                20f,
                 FontStyles.Bold,
                 TextAlignmentOptions.BottomLeft,
                 new Color(0.96f, 0.82f, 0.48f, 1f)
@@ -639,8 +643,8 @@ namespace AOI360.Runtime.Experiment
             statusRect.anchorMin = new Vector2(0f, 0f);
             statusRect.anchorMax = new Vector2(1f, 0f);
             statusRect.pivot = new Vector2(0.5f, 0f);
-            statusRect.sizeDelta = new Vector2(0f, 70f);
-            statusRect.anchoredPosition = new Vector2(0f, 20f);
+            statusRect.sizeDelta = new Vector2(0f, 46f);
+            statusRect.anchoredPosition = new Vector2(0f, 16f);
             statusText.raycastTarget = false;
         }
 
@@ -943,16 +947,16 @@ namespace AOI360.Runtime.Experiment
                 button.transform,
                 "Title",
                 stimulus.DisplayName,
-                30f,
+                24f,
                 FontStyles.Bold,
                 TextAlignmentOptions.Left,
                 Color.white,
                 new Vector2(0f, 1f),
                 new Vector2(1f, 1f),
                 new Vector2(0.5f, 1f),
-                new Vector2(0f, 44f),
-                new Vector2(0f, -8f),
-                new Vector4(24f, 8f, 24f, 0f),
+                new Vector2(0f, 34f),
+                new Vector2(0f, -6f),
+                new Vector4(20f, 6f, 20f, 0f),
                 false
             );
 
@@ -966,16 +970,16 @@ namespace AOI360.Runtime.Experiment
                 button.transform,
                 "Details",
                 detailText,
-                20f,
+                15f,
                 FontStyles.Normal,
                 TextAlignmentOptions.Left,
                 new Color(1f, 0.95f, 0.82f, 0.98f),
                 new Vector2(0f, 1f),
                 new Vector2(1f, 1f),
                 new Vector2(0.5f, 1f),
-                new Vector2(0f, 40f),
-                new Vector2(0f, -56f),
-                new Vector4(24f, 4f, 24f, 8f),
+                new Vector2(0f, 28f),
+                new Vector2(0f, -40f),
+                new Vector4(20f, 4f, 20f, 8f),
                 false
             );
 
