@@ -10,6 +10,9 @@ namespace AOI360.Runtime.Video
     [RequireComponent(typeof(VideoPlayer))]
     public class VideoPlayback : MonoBehaviour
     {
+        // This component owns the whole runtime video handoff: resolve the selected
+        // stimulus path, prepare the panoramic render target, and expose a stable
+        // frame/time clock to the rest of the experiment runtime.
         private const string LatitudeLongitudeLayoutKeyword = "_MAPPING_LATITUDE_LONGITUDE_LAYOUT";
         private const string SixFramesLayoutKeyword = "_MAPPING_6_FRAMES_LAYOUT";
         private const string MirrorOnBackKeyword = "_MIRRORONBACK_ON";
@@ -98,7 +101,10 @@ namespace AOI360.Runtime.Video
             ClearOutputToBlack();
             ApplySkyboxOutput();
             EnsureImmersiveSphereOutput();
+            SetImmersiveSphereVisible(false);
             ApplySelectedStimulusOverride();
+            // Preparation begins in Awake so the countdown can hide the load cost
+            // before playback is explicitly unlocked by the flow controller.
             BeginPrepareIfNeeded();
 
             if (logVideoEvents)
@@ -341,6 +347,7 @@ namespace AOI360.Runtime.Video
             }
 
             RefreshImmersiveSphereMaterial(forceRefresh: true);
+            SetImmersiveSphereVisible(false);
 
             if (logVideoEvents)
             {
@@ -511,6 +518,8 @@ namespace AOI360.Runtime.Video
                 return runtimeSelectedVideoPath;
             }
 
+            // Packaged builds cannot resolve the repository layout, so the runtime
+            // falls back to the mirrored video inside StreamingAssets.
             return Path.Combine(Application.streamingAssetsPath, "Videos", videoFileName);
         }
 
@@ -594,6 +603,7 @@ namespace AOI360.Runtime.Video
             ApplySkyboxOutput();
             playRequestedBeforePrepare = false;
             hasReachedPlaybackEnd = false;
+            SetImmersiveSphereVisible(true);
             videoPlayer.Play();
 
             if (logVideoEvents)
@@ -627,6 +637,7 @@ namespace AOI360.Runtime.Video
                 hasReachedPlaybackEnd = false;
                 ClearOutputToBlack();
                 ApplySkyboxOutput();
+                SetImmersiveSphereVisible(false);
 
                 if (logVideoEvents)
                 {
@@ -684,6 +695,14 @@ namespace AOI360.Runtime.Video
             RenderTexture.active = targetTexture;
             GL.Clear(true, true, Color.black);
             RenderTexture.active = previousActive;
+        }
+
+        private void SetImmersiveSphereVisible(bool visible)
+        {
+            if (runtimeVideoSphere != null && runtimeVideoSphere.activeSelf != visible)
+            {
+                runtimeVideoSphere.SetActive(visible);
+            }
         }
     }
 }

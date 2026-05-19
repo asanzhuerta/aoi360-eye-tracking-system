@@ -1,5 +1,6 @@
 using AOI360.Runtime.AOI;
 using AOI360.Runtime.Mapping;
+using AOI360.Runtime.Video;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
@@ -28,8 +29,10 @@ namespace AOI360.Runtime.Core
 
         private AOILookup aoiLookup;
         private SphericalMapper sphericalMapper;
+        private VideoPlayback videoPlayback;
         private Transform sphereCenter;
         private GameObject overlaySphere;
+        private GameObject videoSphere;
         private Material overlayMaterial;
         private int lastHighlightedAoiId = int.MinValue;
         private Texture2D lastOverlaySourceTexture;
@@ -110,6 +113,7 @@ namespace AOI360.Runtime.Core
 
             if (!createAoiOverlay || aoiLookup == null)
             {
+                SetOverlayVisible(false);
                 return;
             }
 
@@ -119,6 +123,15 @@ namespace AOI360.Runtime.Core
             }
 
             if (overlayMaterial == null)
+            {
+                SetOverlayVisible(false);
+                return;
+            }
+
+            SyncOverlaySphereToVideoSphere();
+            bool shouldShowOverlay = ShouldShowOverlay();
+            SetOverlayVisible(shouldShowOverlay);
+            if (!shouldShowOverlay)
             {
                 return;
             }
@@ -159,10 +172,20 @@ namespace AOI360.Runtime.Core
                 sphericalMapper = FindFirstObjectByType<SphericalMapper>();
             }
 
+            if (videoPlayback == null)
+            {
+                videoPlayback = FindFirstObjectByType<VideoPlayback>();
+            }
+
             if (sphereCenter == null)
             {
                 GameObject center = GameObject.Find("SphereCenter");
                 sphereCenter = center != null ? center.transform : null;
+            }
+
+            if (videoSphere == null)
+            {
+                videoSphere = GameObject.Find("Runtime360VideoSphere");
             }
         }
 
@@ -189,8 +212,8 @@ namespace AOI360.Runtime.Core
             overlayMaterial.name = "Runtime_AOIOverlay";
             ConfigureTransparentMaterial(overlayMaterial, null, Color.white);
 
-            // Render the AOI map on a second sphere slightly inside the video sphere so AOIs
-            // can be debugged directly in-headset without modifying the source video asset.
+            // Render the AOI map on a second sphere that is kept aligned with the
+            // video sphere so AOIs can be debugged in-headset without parallax drift.
             overlaySphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             overlaySphere.name = "AOIOverlaySphere";
             overlaySphere.transform.SetParent(sphereCenter, false);
@@ -224,6 +247,9 @@ namespace AOI360.Runtime.Core
             {
                 overlayFilter.sharedMesh = CreateInvertedSphereMesh(overlayFilter.sharedMesh);
             }
+
+            SyncOverlaySphereToVideoSphere();
+            SetOverlayVisible(false);
         }
 
         private void RefreshOverlayMaterial(bool forceRefresh)
@@ -438,6 +464,52 @@ namespace AOI360.Runtime.Core
             lastVerticalOffsetDegrees = sphericalMapper.VerticalOffsetDegrees;
             lastHorizontalFlip = sphericalMapper.FlipHorizontally;
             lastVerticalFlip = sphericalMapper.FlipVertically;
+        }
+
+        private void SyncOverlaySphereToVideoSphere()
+        {
+            if (overlaySphere == null)
+            {
+                return;
+            }
+
+            if (videoSphere == null)
+            {
+                videoSphere = GameObject.Find("Runtime360VideoSphere");
+            }
+
+            if (videoSphere != null)
+            {
+                overlaySphere.transform.SetParent(videoSphere.transform.parent, false);
+                overlaySphere.transform.localPosition = videoSphere.transform.localPosition;
+                overlaySphere.transform.localRotation = videoSphere.transform.localRotation;
+                overlaySphere.transform.localScale = videoSphere.transform.localScale;
+                return;
+            }
+
+            overlaySphere.transform.localScale = new Vector3(
+                overlaySphereRadius * 2f,
+                overlaySphereRadius * 2f,
+                overlaySphereRadius * 2f
+            );
+        }
+
+        private bool ShouldShowOverlay()
+        {
+            if (ExperimentSessionState.IsPlaybackStartLocked)
+            {
+                return false;
+            }
+
+            return videoPlayback != null && videoPlayback.IsPlaying;
+        }
+
+        private void SetOverlayVisible(bool visible)
+        {
+            if (overlaySphere != null && overlaySphere.activeSelf != visible)
+            {
+                overlaySphere.SetActive(visible);
+            }
         }
     }
 }

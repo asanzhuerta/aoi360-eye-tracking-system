@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using AOI360.Runtime.Experiment;
 using UnityEditor;
 using UnityEngine;
 
@@ -61,17 +60,12 @@ public static class SyncGeneratedAoiSequences
                 continue;
             }
 
-            string videoFileName = $"{sequenceName}.mp4";
-            if (ExperimentStimulusCatalog.TryReadVideoFileNameFromManifest(manifestPath, out string manifestVideoFileName))
-            {
-                videoFileName = manifestVideoFileName;
-            }
-
-            string sourceVideoPath = Path.Combine(sourceVideosRoot, videoFileName);
-            if (!File.Exists(sourceVideoPath))
+            string sourceVideoPath;
+            string videoFileName;
+            if (!TryFindVideoForSequence(sourceVideosRoot, sequenceName, out sourceVideoPath, out videoFileName))
             {
                 Debug.LogWarning(
-                    $"[SyncGeneratedAoiSequences] Skipping '{sequenceName}' because the source video is missing: {sourceVideoPath}"
+                    $"[SyncGeneratedAoiSequences] Skipping '{sequenceName}' because the source video is missing."
                 );
                 continue;
             }
@@ -156,5 +150,52 @@ public static class SyncGeneratedAoiSequences
             string destinationFile = Path.Combine(destinationDirectory, Path.GetFileName(sourceFile));
             File.Copy(sourceFile, destinationFile, overwrite: true);
         }
+    }
+
+    private static bool TryFindVideoForSequence(
+        string videosRoot,
+        string sequenceName,
+        out string sourceVideoPath,
+        out string videoFileName
+    )
+    {
+        sourceVideoPath = string.Empty;
+        videoFileName = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(videosRoot) || !Directory.Exists(videosRoot))
+        {
+            return false;
+        }
+
+        string[] matches = Directory.GetFiles(videosRoot, sequenceName + ".*", SearchOption.TopDirectoryOnly);
+        for (int i = 0; i < matches.Length; i++)
+        {
+            string candidatePath = matches[i];
+            string extension = Path.GetExtension(candidatePath);
+            if (!IsSupportedVideoExtension(extension))
+            {
+                continue;
+            }
+
+            sourceVideoPath = candidatePath;
+            videoFileName = Path.GetFileName(candidatePath);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsSupportedVideoExtension(string extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension))
+        {
+            return false;
+        }
+
+        string normalized = extension.ToLowerInvariant();
+        return normalized == ".mp4" ||
+               normalized == ".mkv" ||
+               normalized == ".mov" ||
+               normalized == ".webm";
     }
 }

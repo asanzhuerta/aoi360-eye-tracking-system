@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -13,7 +15,11 @@ namespace AOI360.Runtime.Experiment
     [DefaultExecutionOrder(-250)]
     public class ExperimentSelectionSceneController : MonoBehaviour
     {
-        private static readonly string[] TargetSceneNames = { "Initial_Scene", "SampleScene" };
+        // This controller rebuilds the selection UI at runtime so the headset menu
+        // always reflects the latest preprocessed stimuli available on disk.
+        private static readonly string[] TargetSceneNames = { "Initial_Scene" };
+        private const string StimulusManifestSuffix = "_aoi_sequence_manifest.json";
+        private const bool IncludeStreamingAssetsMirror = false;
 
         private static readonly string[] PlaybackSceneCandidates =
         {
@@ -211,7 +217,8 @@ namespace AOI360.Runtime.Experiment
             inputModule.deselectOnBackgroundClick = true;
             inputModule.pointerBehavior = UIPointerBehavior.SingleMouseOrPenButMultiTouchAndTrack;
 
-            eventSystem.sendNavigationEvents = true;
+            eventSystem.sendNavigationEvents = false;
+            eventSystem.SetSelectedGameObject(null);
 
             Debug.Log("[ExperimentSelectionSceneController] EventSystem configured for Input System + XR tracked device UI.");
         }
@@ -324,26 +331,16 @@ namespace AOI360.Runtime.Experiment
                 InputActionType.PassThrough
             );
             trackedDevicePositionAction.expectedControlType = "Vector3";
-            trackedDevicePositionAction.AddBinding("<XRController>/devicePosition");
-            trackedDevicePositionAction.AddBinding("<XRController>{LeftHand}/devicePosition");
-            trackedDevicePositionAction.AddBinding("<XRController>{RightHand}/devicePosition");
-            trackedDevicePositionAction.AddBinding("<XRController>/pointerPosition");
-            trackedDevicePositionAction.AddBinding("<XRController>{LeftHand}/pointerPosition");
             trackedDevicePositionAction.AddBinding("<XRController>{RightHand}/pointerPosition");
-            trackedDevicePositionAction.AddBinding("<TrackedDevice>/devicePosition");
+            trackedDevicePositionAction.AddBinding("<XRController>{RightHand}/devicePosition");
 
             InputAction trackedDeviceOrientationAction = map.AddAction(
                 "TrackedDeviceOrientation",
                 InputActionType.PassThrough
             );
             trackedDeviceOrientationAction.expectedControlType = "Quaternion";
-            trackedDeviceOrientationAction.AddBinding("<XRController>/deviceRotation");
-            trackedDeviceOrientationAction.AddBinding("<XRController>{LeftHand}/deviceRotation");
-            trackedDeviceOrientationAction.AddBinding("<XRController>{RightHand}/deviceRotation");
-            trackedDeviceOrientationAction.AddBinding("<XRController>/pointerRotation");
-            trackedDeviceOrientationAction.AddBinding("<XRController>{LeftHand}/pointerRotation");
             trackedDeviceOrientationAction.AddBinding("<XRController>{RightHand}/pointerRotation");
-            trackedDeviceOrientationAction.AddBinding("<TrackedDevice>/deviceRotation");
+            trackedDeviceOrientationAction.AddBinding("<XRController>{RightHand}/deviceRotation");
 
             asset.AddActionMap(map);
             return asset;
@@ -358,18 +355,7 @@ namespace AOI360.Runtime.Experiment
 
             clickAction.AddBinding("<Mouse>/leftButton");
             clickAction.AddBinding("<Touchscreen>/primaryTouch/press");
-
-            clickAction.AddBinding("<XRController>/triggerPressed");
-            clickAction.AddBinding("<XRController>{LeftHand}/triggerPressed");
             clickAction.AddBinding("<XRController>{RightHand}/triggerPressed");
-
-            clickAction.AddBinding("<XRController>{LeftHand}/primaryButton");
-            clickAction.AddBinding("<XRController>{RightHand}/primaryButton");
-
-            clickAction.AddBinding("<XRController>{LeftHand}/gripPressed");
-            clickAction.AddBinding("<XRController>{RightHand}/gripPressed");
-
-            clickAction.AddBinding("<XRController>{LeftHand}/trigger").WithInteraction("Press");
             clickAction.AddBinding("<XRController>{RightHand}/trigger").WithInteraction("Press");
         }
 
@@ -383,19 +369,6 @@ namespace AOI360.Runtime.Experiment
             submitAction.AddBinding("<Keyboard>/enter");
             submitAction.AddBinding("<Keyboard>/numpadEnter");
             submitAction.AddBinding("<Gamepad>/buttonSouth");
-
-            submitAction.AddBinding("<XRController>/triggerPressed");
-            submitAction.AddBinding("<XRController>{LeftHand}/triggerPressed");
-            submitAction.AddBinding("<XRController>{RightHand}/triggerPressed");
-
-            submitAction.AddBinding("<XRController>{LeftHand}/primaryButton");
-            submitAction.AddBinding("<XRController>{RightHand}/primaryButton");
-
-            submitAction.AddBinding("<XRController>{LeftHand}/gripPressed");
-            submitAction.AddBinding("<XRController>{RightHand}/gripPressed");
-
-            submitAction.AddBinding("<XRController>{LeftHand}/trigger").WithInteraction("Press");
-            submitAction.AddBinding("<XRController>{RightHand}/trigger").WithInteraction("Press");
         }
 
         private static void AddMoveBindings(InputAction moveAction)
@@ -427,10 +400,6 @@ namespace AOI360.Runtime.Experiment
                 .With("Left", "<Gamepad>/dpad/left")
                 .With("Right", "<Gamepad>/dpad/right");
 
-            moveAction.AddBinding("<XRController>{LeftHand}/thumbstick");
-            moveAction.AddBinding("<XRController>{RightHand}/thumbstick");
-            moveAction.AddBinding("<XRController>{LeftHand}/primary2DAxis");
-            moveAction.AddBinding("<XRController>{RightHand}/primary2DAxis");
         }
 
         private bool TryUseSceneUi()
@@ -465,6 +434,8 @@ namespace AOI360.Runtime.Experiment
                 sceneRefreshButton.onClick.RemoveListener(PopulateStimulusList);
                 sceneRefreshButton.onClick.AddListener(PopulateStimulusList);
             }
+
+            EnsureCanvasRaycasters(sceneCanvas.gameObject);
 
             return true;
         }
@@ -534,6 +505,7 @@ namespace AOI360.Runtime.Experiment
 
             rootCanvasRect = canvasObject.GetComponent<RectTransform>();
             ConfigurePresentationCanvas(canvasObject, rootCanvasRect);
+            EnsureCanvasRaycasters(canvasObject);
 
             RectTransform background = ExperimentRuntimeUi.CreateUiObject(
                 "Background",
@@ -589,7 +561,7 @@ namespace AOI360.Runtime.Experiment
             TextMeshProUGUI subtitleText = ExperimentRuntimeUi.CreateText(
                 "Subtitle",
                 modal,
-                "Elige un estimulo procesado. Todos los botones abren la misma escena VR base y cambian el video y los AOIs. Usa gatillo / Enter / boton principal para confirmar.",
+                "Elige un estimulo procesado. Todos los botones abren la misma escena VR base y cambian el video y los AOIs. Usa el laser del mando derecho y el gatillo para confirmar.",
                 22f,
                 FontStyles.Normal,
                 TextAlignmentOptions.TopLeft,
@@ -695,10 +667,7 @@ namespace AOI360.Runtime.Experiment
             rootCanvas.sortingOrder = 5000;
             rootCanvas.overrideSorting = true;
 
-            if (canvasObject.GetComponent<TrackedDeviceRaycaster>() == null)
-            {
-                canvasObject.AddComponent<TrackedDeviceRaycaster>();
-            }
+            EnsureCanvasRaycasters(canvasObject);
 
             canvasRect.anchorMin = new Vector2(0.5f, 0.5f);
             canvasRect.anchorMax = new Vector2(0.5f, 0.5f);
@@ -847,7 +816,7 @@ namespace AOI360.Runtime.Experiment
             stimulusButtons.Clear();
             firstStimulusButton = null;
 
-            IReadOnlyList<ExperimentStimulusDefinition> stimuli = ExperimentStimulusCatalog.DiscoverAvailableStimuli();
+            List<ExperimentStimulusDefinition> stimuli = DiscoverAvailableStimuli();
 
             int repositoryCount = 0;
             int streamingCount = 0;
@@ -873,7 +842,9 @@ namespace AOI360.Runtime.Experiment
             if (sourceSummaryText != null)
             {
                 sourceSummaryText.text = stimuli.Count > 0
-                    ? $"Estimulos disponibles: {stimuli.Count} | repo: {repositoryCount} | mirror: {streamingCount}"
+                    ? IncludeStreamingAssetsMirror
+                        ? $"Estimulos disponibles: {stimuli.Count} | repo: {repositoryCount} | mirror: {streamingCount}"
+                        : $"Estimulos disponibles: {stimuli.Count} | repo: {repositoryCount}"
                     : "No se ha encontrado ningun estimulo listo.";
             }
 
@@ -881,7 +852,7 @@ namespace AOI360.Runtime.Experiment
             {
                 statusText.text = stimuli.Count > 0
                     ? "Selecciona un video para abrir la escena VR base y lanzar la cuenta atras."
-                    : "No hay videos listos. Revisa `data/input_videos` y `data/processed`, o sincroniza `StreamingAssets`.";
+                    : "No hay videos listos. Revisa `data/input_videos` y `data/processed`.";
             }
 
             if (stimuli.Count == 0)
@@ -923,14 +894,9 @@ namespace AOI360.Runtime.Experiment
                 $"Stimuli: {stimuli.Count}, content children: {listContentRoot.childCount}"
             );
 
-            if (firstStimulusButton != null && EventSystem.current != null)
+            if (EventSystem.current != null)
             {
-                EventSystem.current.SetSelectedGameObject(firstStimulusButton.gameObject);
-                Debug.Log($"[ExperimentSelectionSceneController] First selected button: {firstStimulusButton.name}");
-            }
-            else
-            {
-                Debug.LogWarning("[ExperimentSelectionSceneController] No first stimulus button selected.");
+                EventSystem.current.SetSelectedGameObject(null);
             }
         }
 
@@ -1042,11 +1008,7 @@ namespace AOI360.Runtime.Experiment
 
                 Navigation navigation = new Navigation
                 {
-                    mode = Navigation.Mode.Explicit,
-                    selectOnUp = i > 0 ? stimulusButtons[i - 1] : stimulusButtons[i],
-                    selectOnDown = i < stimulusButtons.Count - 1 ? stimulusButtons[i + 1] : stimulusButtons[i],
-                    selectOnLeft = current,
-                    selectOnRight = current
+                    mode = Navigation.Mode.None
                 };
 
                 current.navigation = navigation;
@@ -1143,6 +1105,257 @@ namespace AOI360.Runtime.Experiment
             }
 
             return PlaybackSceneCandidates[0];
+        }
+
+        private static List<ExperimentStimulusDefinition> DiscoverAvailableStimuli()
+        {
+            Dictionary<string, ExperimentStimulusDefinition> stimuliByKey =
+                new Dictionary<string, ExperimentStimulusDefinition>(StringComparer.OrdinalIgnoreCase);
+
+            AddRepositoryStimuli(stimuliByKey);
+            if (IncludeStreamingAssetsMirror)
+            {
+                AddStreamingAssetStimuli(stimuliByKey);
+            }
+
+            List<ExperimentStimulusDefinition> stimuli =
+                new List<ExperimentStimulusDefinition>(stimuliByKey.Values);
+
+            stimuli.Sort(delegate (ExperimentStimulusDefinition left, ExperimentStimulusDefinition right)
+            {
+                return string.Compare(left.DisplayName, right.DisplayName, StringComparison.OrdinalIgnoreCase);
+            });
+
+            return stimuli;
+        }
+
+        private static void AddRepositoryStimuli(Dictionary<string, ExperimentStimulusDefinition> stimuliByKey)
+        {
+            string repositoryRoot;
+            if (!TryResolveRepositoryRoot(out repositoryRoot))
+            {
+                return;
+            }
+
+            string inputVideosRoot = Path.Combine(repositoryRoot, "data", "input_videos");
+            string processedMetadataRoot = Path.Combine(repositoryRoot, "data", "processed", "metadata");
+            string processedMapsRoot = Path.Combine(repositoryRoot, "data", "processed", "id_maps");
+
+            if (!Directory.Exists(inputVideosRoot) ||
+                !Directory.Exists(processedMetadataRoot) ||
+                !Directory.Exists(processedMapsRoot))
+            {
+                return;
+            }
+
+            string[] manifestPaths = Directory.GetFiles(
+                processedMetadataRoot,
+                "*" + StimulusManifestSuffix,
+                SearchOption.TopDirectoryOnly
+            );
+
+            for (int i = 0; i < manifestPaths.Length; i++)
+            {
+                string manifestPath = manifestPaths[i];
+                string sequenceName = Path.GetFileNameWithoutExtension(manifestPath)
+                    .Replace("_aoi_sequence_manifest", string.Empty);
+
+                string mapsDirectoryPath = Path.Combine(processedMapsRoot, sequenceName);
+                if (!Directory.Exists(mapsDirectoryPath))
+                {
+                    continue;
+                }
+
+                string videoAbsolutePath;
+                string videoFileName;
+                if (!TryFindVideoForSequence(inputVideosRoot, sequenceName, out videoAbsolutePath, out videoFileName))
+                {
+                    continue;
+                }
+
+                stimuliByKey[sequenceName] = new ExperimentStimulusDefinition(
+                    Path.GetFileNameWithoutExtension(videoFileName),
+                    videoFileName,
+                    videoAbsolutePath,
+                    sequenceName,
+                    manifestPath,
+                    mapsDirectoryPath,
+                    ExperimentStimulusSourceKind.RepositoryData,
+                    "Repo:data"
+                );
+            }
+        }
+
+        private static void AddStreamingAssetStimuli(Dictionary<string, ExperimentStimulusDefinition> stimuliByKey)
+        {
+            string videosRoot = Path.Combine(Application.streamingAssetsPath, "Videos");
+            string sequencesRoot = Path.Combine(Application.streamingAssetsPath, "AOIMaps", "Sequences");
+            if (!Directory.Exists(videosRoot) || !Directory.Exists(sequencesRoot))
+            {
+                return;
+            }
+
+            string[] sequenceDirectories = Directory.GetDirectories(sequencesRoot, "*", SearchOption.TopDirectoryOnly);
+            for (int i = 0; i < sequenceDirectories.Length; i++)
+            {
+                string sequenceDirectory = sequenceDirectories[i];
+                string sequenceName = Path.GetFileName(sequenceDirectory);
+                string manifestPath = Path.Combine(sequenceDirectory, sequenceName + StimulusManifestSuffix);
+                if (!File.Exists(manifestPath))
+                {
+                    continue;
+                }
+
+                string mapsDirectoryPath = Path.Combine(sequenceDirectory, "maps");
+                if (!Directory.Exists(mapsDirectoryPath))
+                {
+                    continue;
+                }
+
+                string videoAbsolutePath;
+                string videoFileName;
+                if (!TryFindVideoForSequence(videosRoot, sequenceName, out videoAbsolutePath, out videoFileName))
+                {
+                    continue;
+                }
+
+                if (stimuliByKey.ContainsKey(sequenceName))
+                {
+                    continue;
+                }
+
+                stimuliByKey[sequenceName] = new ExperimentStimulusDefinition(
+                    Path.GetFileNameWithoutExtension(videoFileName),
+                    videoFileName,
+                    videoAbsolutePath,
+                    sequenceName,
+                    manifestPath,
+                    mapsDirectoryPath,
+                    ExperimentStimulusSourceKind.StreamingAssets,
+                    "StreamingAssets"
+                );
+            }
+        }
+
+        private static bool TryResolveRepositoryRoot(out string repositoryRoot)
+        {
+            DirectoryInfo currentDirectory = new DirectoryInfo(Application.dataPath);
+
+            while (currentDirectory != null)
+            {
+                string candidateRoot = currentDirectory.FullName;
+                bool hasDataDirectory = Directory.Exists(Path.Combine(candidateRoot, "data"));
+                bool hasUnityDirectory = Directory.Exists(Path.Combine(candidateRoot, "unity"));
+
+                if (hasDataDirectory && hasUnityDirectory)
+                {
+                    repositoryRoot = candidateRoot;
+                    return true;
+                }
+
+                currentDirectory = currentDirectory.Parent;
+            }
+
+            repositoryRoot = string.Empty;
+            return false;
+        }
+
+        private static bool TryFindVideoForSequence(
+            string videosRoot,
+            string sequenceName,
+            out string videoAbsolutePath,
+            out string videoFileName
+        )
+        {
+            videoAbsolutePath = string.Empty;
+            videoFileName = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(videosRoot) || !Directory.Exists(videosRoot))
+            {
+                return false;
+            }
+
+            string[] matches = Directory.GetFiles(videosRoot, sequenceName + ".*", SearchOption.TopDirectoryOnly);
+            for (int i = 0; i < matches.Length; i++)
+            {
+                string candidatePath = matches[i];
+                string extension = Path.GetExtension(candidatePath);
+                if (!IsSupportedVideoExtension(extension))
+                {
+                    continue;
+                }
+
+                videoAbsolutePath = candidatePath;
+                videoFileName = Path.GetFileName(candidatePath);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsSupportedVideoExtension(string extension)
+        {
+            if (string.IsNullOrWhiteSpace(extension))
+            {
+                return false;
+            }
+
+            string normalized = extension.ToLowerInvariant();
+            return normalized == ".mp4" ||
+                   normalized == ".mkv" ||
+                   normalized == ".mov" ||
+                   normalized == ".webm";
+        }
+
+        private void EnsureCanvasRaycasters(GameObject canvasObject)
+        {
+            if (canvasObject == null)
+            {
+                return;
+            }
+
+            bool hasXrDevice = InputSystem.GetDevice<XRHMD>() != null;
+
+            GraphicRaycaster graphicRaycaster = canvasObject.GetComponent<GraphicRaycaster>();
+            if (graphicRaycaster == null)
+            {
+                graphicRaycaster = canvasObject.AddComponent<GraphicRaycaster>();
+            }
+
+            if (!hasXrDevice)
+            {
+                graphicRaycaster.enabled = true;
+                return;
+            }
+
+            TrackedDeviceRaycaster legacyTrackedRaycaster = canvasObject.GetComponent<TrackedDeviceRaycaster>();
+            if (legacyTrackedRaycaster != null)
+            {
+                Destroy(legacyTrackedRaycaster);
+            }
+
+            System.Type trackedRaycasterType = Type.GetType(
+                "UnityEngine.InputSystem.UI.TrackedDeviceGraphicRaycaster, Unity.InputSystem"
+            );
+
+            if (trackedRaycasterType == null)
+            {
+                Debug.LogWarning(
+                    "[ExperimentSelectionSceneController] TrackedDeviceGraphicRaycaster was not found. " +
+                    "The world-space UI may still rely on the standard GraphicRaycaster."
+                );
+                return;
+            }
+
+            Component trackedRaycaster = canvasObject.GetComponent(trackedRaycasterType);
+            if (trackedRaycaster == null)
+            {
+                trackedRaycaster = canvasObject.AddComponent(trackedRaycasterType);
+            }
+
+            trackedRaycaster.GetType().GetProperty("checkFor2DOcclusion")?.SetValue(trackedRaycaster, false);
+            trackedRaycaster.GetType().GetProperty("checkFor3DOcclusion")?.SetValue(trackedRaycaster, false);
+            graphicRaycaster.enabled = false;
         }
     }
 }
