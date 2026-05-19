@@ -32,8 +32,8 @@ namespace AOI360.Runtime.Experiment
         private const float UiDynamicPixelsPerUnit = 96f;
         private const float SelectionCanvasWorldDepthMeters = 2.6f;
         private const float SelectionCanvasScale = 0.0015f;
-        private const float SelectionCanvasMinimumHeightMeters = 1.55f;
-        private const float SelectionCanvasHeightOffsetMeters = 0.18f;
+        private const float SelectionCanvasMinimumHeightMeters = 1.42f;
+        private const float SelectionCanvasHeightOffsetMeters = 0.1f;
 
         private const float StimulusButtonHeight = 86f;
         private const float StimulusButtonSpacing = 10f;
@@ -230,6 +230,12 @@ namespace AOI360.Runtime.Experiment
                 return;
             }
 
+            if (HasSceneTrackedDeviceInput(inputModule))
+            {
+                inputModule.actionsAsset.Enable();
+                return;
+            }
+
             if (runtimeUiActionsAsset == null)
             {
                 runtimeUiActionsAsset = BuildRuntimeUiActionsAsset();
@@ -256,6 +262,21 @@ namespace AOI360.Runtime.Experiment
             );
 
             runtimeUiActionsAsset.Enable();
+        }
+
+        private static bool HasSceneTrackedDeviceInput(InputSystemUIInputModule inputModule)
+        {
+            if (inputModule == null || inputModule.actionsAsset == null)
+            {
+                return false;
+            }
+
+            return inputModule.leftClick != null &&
+                   inputModule.leftClick.action != null &&
+                   inputModule.trackedDevicePosition != null &&
+                   inputModule.trackedDevicePosition.action != null &&
+                   inputModule.trackedDeviceOrientation != null &&
+                   inputModule.trackedDeviceOrientation.action != null;
         }
 
         private static InputActionAsset BuildRuntimeUiActionsAsset()
@@ -331,7 +352,6 @@ namespace AOI360.Runtime.Experiment
                 InputActionType.PassThrough
             );
             trackedDevicePositionAction.expectedControlType = "Vector3";
-            trackedDevicePositionAction.AddBinding("<XRController>{RightHand}/pointerPosition");
             trackedDevicePositionAction.AddBinding("<XRController>{RightHand}/devicePosition");
 
             InputAction trackedDeviceOrientationAction = map.AddAction(
@@ -339,7 +359,6 @@ namespace AOI360.Runtime.Experiment
                 InputActionType.PassThrough
             );
             trackedDeviceOrientationAction.expectedControlType = "Quaternion";
-            trackedDeviceOrientationAction.AddBinding("<XRController>{RightHand}/pointerRotation");
             trackedDeviceOrientationAction.AddBinding("<XRController>{RightHand}/deviceRotation");
 
             asset.AddActionMap(map);
@@ -1332,34 +1351,15 @@ namespace AOI360.Runtime.Experiment
                 return;
             }
 
-            TrackedDeviceRaycaster legacyTrackedRaycaster = canvasObject.GetComponent<TrackedDeviceRaycaster>();
-            if (legacyTrackedRaycaster != null)
+            TrackedDeviceRaycaster trackedDeviceRaycaster = canvasObject.GetComponent<TrackedDeviceRaycaster>();
+            if (trackedDeviceRaycaster == null)
             {
-                Destroy(legacyTrackedRaycaster);
+                trackedDeviceRaycaster = canvasObject.AddComponent<TrackedDeviceRaycaster>();
             }
 
-            System.Type trackedRaycasterType = Type.GetType(
-                "UnityEngine.InputSystem.UI.TrackedDeviceGraphicRaycaster, Unity.InputSystem"
-            );
-
-            if (trackedRaycasterType == null)
-            {
-                Debug.LogWarning(
-                    "[ExperimentSelectionSceneController] TrackedDeviceGraphicRaycaster was not found. " +
-                    "The world-space UI may still rely on the standard GraphicRaycaster."
-                );
-                return;
-            }
-
-            Component trackedRaycaster = canvasObject.GetComponent(trackedRaycasterType);
-            if (trackedRaycaster == null)
-            {
-                trackedRaycaster = canvasObject.AddComponent(trackedRaycasterType);
-            }
-
-            trackedRaycaster.GetType().GetProperty("checkFor2DOcclusion")?.SetValue(trackedRaycaster, false);
-            trackedRaycaster.GetType().GetProperty("checkFor3DOcclusion")?.SetValue(trackedRaycaster, false);
-            graphicRaycaster.enabled = false;
+            trackedDeviceRaycaster.checkFor2DOcclusion = false;
+            trackedDeviceRaycaster.checkFor3DOcclusion = false;
+            graphicRaycaster.enabled = true;
         }
     }
 }
