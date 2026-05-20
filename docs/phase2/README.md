@@ -55,6 +55,52 @@ Recommended runtime flow in the Editor:
 
 If the runtime cannot resolve the repository root, the CSV exporter falls back to `Application.persistentDataPath/Exports/csv`. That fallback is mainly for packaged builds or unusual folder layouts.
 
+## Phase 2 manual: Windows build for SteamVR runtime
+
+If we now want to work with a `Windows x64` build that runs through `SteamVR`, the recommended path is:
+
+1. Open the Unity project under `unity/AOI360Runtime/`.
+2. Keep `OpenXR` as the XR backend for `Standalone`.
+3. Make sure `SteamVR` is the active OpenXR runtime on the PC that will execute the build.
+4. If the target headset uses HTC eye tracking on PC, start its eye-tracking runtime first.
+5. Use `Tools > AOI > Build Windows x64 Player`.
+6. Let Unity generate the player under `build/windows/AOI360Runtime/AOI360Runtime.exe`.
+7. Launch that repository-local build without moving it outside the repo.
+
+This keeps the build inside the repository tree, so the runtime can still resolve:
+
+- `data/input_videos/`
+- `data/processed/`
+- `data/exports/csv/`
+
+With that layout, the same repository-backed workflow used in the Editor is preserved and the CSV export continues to land in `data/exports/csv/`.
+
+If the `.exe` is moved outside the repository, the runtime can lose that repository-backed behavior. In that case, define `AOI360_REPOSITORY_ROOT` before launching the player or pass `--aoi360-repo-root=<absolute_repo_path>`.
+
+Important runtime note:
+
+- this project already targets `Standalone + OpenXR`
+- the runtime input bindings are based on `XRController` / `OpenXRController`
+- eye gaze is read first from the HTC-specific eye-tracker path when available and then falls back to the generic OpenXR eye-gaze path
+
+So the intended PC path is `Windows build -> OpenXR -> SteamVR runtime`, not `Windows build -> legacy SteamVR Unity plugin`.
+
+## Phase 2 manual: refresh the Windows build with new videos
+
+For the day-to-day operational flow, use:
+
+- `windows-build-refresh-runbook.md`
+
+That runbook documents the full chain:
+
+1. drop the new video into `data/input_videos/`
+2. rebuild the processed AOI assets with the offline Python pipeline
+3. rebuild the repository-local Windows player
+4. run the VR session through `SteamVR`
+5. hand the exported CSVs to Phase 3 analytics
+
+This is now the recommended maintenance path when the content changes but the Unity runtime itself does not.
+
 ## Expected headset flow
 
 The current documented Phase 2 flow is:
@@ -67,7 +113,7 @@ The current documented Phase 2 flow is:
 
 ## Build note
 
-The current Unity implementation can be built, but it will only behave the same as the editor workflow if the build also receives the required video and AOI assets through the mirrored `StreamingAssets` layout. The repository-backed discovery path is the reference workflow used during development.
+The repository-backed discovery path is still the reference workflow used during development. For PC builds, the new recommended approach is to generate the player inside `build/windows/` so the executable remains under the same repo tree and can keep using repository-backed stimuli plus repository-local CSV export.
 
 ## Documents
 
@@ -75,3 +121,4 @@ The current Unity implementation can be built, but it will only behave the same 
 - `aoi-data-contract.md` -> AOI map and metadata contract for Unity and Python
 - `csv-schema.md` -> exported fixation CSV fields, units, and interpretation notes
 - `validation-checklist.md` -> practical checks for testing on device
+- `windows-build-refresh-runbook.md` -> operational checklist for adding new videos, rebuilding the Windows player, and handing the CSVs to Phase 3

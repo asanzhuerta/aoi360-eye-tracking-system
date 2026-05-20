@@ -1318,25 +1318,7 @@ namespace AOI360.Runtime.Experiment
 
         private static bool TryResolveRepositoryRoot(out string repositoryRoot)
         {
-            DirectoryInfo currentDirectory = new DirectoryInfo(Application.dataPath);
-
-            while (currentDirectory != null)
-            {
-                string candidateRoot = currentDirectory.FullName;
-                bool hasDataDirectory = Directory.Exists(Path.Combine(candidateRoot, "data"));
-                bool hasUnityDirectory = Directory.Exists(Path.Combine(candidateRoot, "unity"));
-
-                if (hasDataDirectory && hasUnityDirectory)
-                {
-                    repositoryRoot = candidateRoot;
-                    return true;
-                }
-
-                currentDirectory = currentDirectory.Parent;
-            }
-
-            repositoryRoot = string.Empty;
-            return false;
+            return RepositoryPathResolver.TryResolveRepositoryRoot(out repositoryRoot);
         }
 
         private static bool TryFindVideoForSequence(
