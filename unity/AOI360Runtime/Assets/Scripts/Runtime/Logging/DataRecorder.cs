@@ -55,6 +55,7 @@ namespace AOI360.Runtime.Logging
             hasExportedCurrentRows = false;
             LastExportPath = string.Empty;
             ResolveReferences();
+            ApplyRuntimeIdentifiersPreview();
 
             if (recordOnStart)
             {
@@ -149,7 +150,13 @@ namespace AOI360.Runtime.Logging
 
         public void StartRecording()
         {
+            if (isRecording)
+            {
+                return;
+            }
+
             ResolveReferences();
+            RefreshIdentifiersForRecordingStart();
             sessionStartTime = Time.time;
             isRecording = true;
             lastExportedFixationSequence = 0;
@@ -158,7 +165,10 @@ namespace AOI360.Runtime.Logging
 
             if (logRecordingState)
             {
-                Debug.Log("[DataRecorder] Recording started.");
+                Debug.Log(
+                    $"[DataRecorder] Recording started. participantId={participantId} | " +
+                    $"sessionId={sessionId} | videoId={videoId}"
+                );
             }
         }
 
@@ -221,6 +231,7 @@ namespace AOI360.Runtime.Logging
         private void TryStartRecording()
         {
             ResolveReferences();
+            ApplyRuntimeIdentifiersPreview();
 
             if (isRecording)
             {
@@ -303,6 +314,11 @@ namespace AOI360.Runtime.Logging
         {
             // Keep the runtime CSV aligned with the offline manifests by exporting
             // the video base name without the container extension.
+            if (ExperimentSessionState.HasSelectedStimulus && !string.IsNullOrWhiteSpace(ExperimentSessionState.SelectedStimulus.VideoId))
+            {
+                return ExperimentSessionState.SelectedStimulus.VideoId;
+            }
+
             if (videoPlayback != null)
             {
                 if (!string.IsNullOrWhiteSpace(videoPlayback.ActiveVideoPath))
@@ -317,6 +333,20 @@ namespace AOI360.Runtime.Logging
             }
 
             return Path.GetFileNameWithoutExtension(videoId);
+        }
+
+        private void ApplyRuntimeIdentifiersPreview()
+        {
+            participantId = ExperimentSessionState.CurrentParticipantId;
+            sessionId = ExperimentSessionState.PeekNextSessionId();
+            videoId = ResolveVideoId();
+        }
+
+        private void RefreshIdentifiersForRecordingStart()
+        {
+            participantId = ExperimentSessionState.CurrentParticipantId;
+            sessionId = ExperimentSessionState.ReserveNextSessionId();
+            videoId = ResolveVideoId();
         }
 
         private string Escape(string value)

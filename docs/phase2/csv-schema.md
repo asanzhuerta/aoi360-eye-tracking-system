@@ -12,8 +12,8 @@ Instead, it exports one row per committed fixation step. The current runtime use
 
 | Field | Meaning | Units / format | Notes |
 |---|---|---|---|
-| `participant_id` | Participant identifier | text | Subject identifier used in the experiment |
-| `session_id` | Session identifier | text | Session or run identifier |
+| `participant_id` | Participant identifier | text | Auto-incremented once per Unity app execution, using the `P###` format |
+| `session_id` | Session identifier | text | Auto-incremented once per started experiment within the current app execution, using the `S###` format |
 | `video_id` | Video identifier | text | Base name of the selected 360 video without extension, so it matches the offline manifests |
 | `timestamp_ms` | Fixation event timestamp | milliseconds | Quantized to the current fixation cadence |
 | `frame_index` | Video frame index | integer | Current Unity `VideoPlayer` frame when the fixation row is exported |
