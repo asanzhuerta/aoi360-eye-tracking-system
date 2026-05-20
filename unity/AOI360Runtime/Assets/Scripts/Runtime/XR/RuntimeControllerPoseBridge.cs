@@ -23,6 +23,8 @@ namespace AOI360.Runtime.XR
 
         private const string RuntimeObjectName = "RuntimeControllerPoseBridge_Runtime";
         private const float PointerLength = 8f;
+        private const string LeftControllerResourcePath = "ControllerPrefabs/Focus3_Left";
+        private const string RightControllerResourcePath = "ControllerPrefabs/Focus3_Right";
         private const string LeftControllerPrefabPath =
             "Assets/Samples/VIVE OpenXR Plugin/2.5.0/VIVE OpenXR Samples/Samples/Commons/VRSPrefabs/Controller/Focus3_Left.prefab";
         private const string RightControllerPrefabPath =
@@ -169,31 +171,87 @@ namespace AOI360.Runtime.XR
 
         private void CreateActions()
         {
-            leftTrackedAction = CreateButtonAction("<XRController>{LeftHand}/isTracked");
-            leftDevicePositionAction = CreatePoseAction("<XRController>{LeftHand}/devicePosition", "Vector3");
-            leftDeviceRotationAction = CreatePoseAction("<XRController>{LeftHand}/deviceRotation", "Quaternion");
-            leftPointerPositionAction = CreatePoseAction("<XRController>{LeftHand}/pointerPosition", "Vector3");
-            leftPointerRotationAction = CreatePoseAction("<XRController>{LeftHand}/pointerRotation", "Quaternion");
+            leftTrackedAction = CreateButtonAction(
+                "<XRController>{LeftHand}/isTracked",
+                "<OpenXRController>{LeftHand}/isTracked"
+            );
+            leftDevicePositionAction = CreatePoseAction(
+                "Vector3",
+                "<XRController>{LeftHand}/devicePosition",
+                "<OpenXRController>{LeftHand}/devicePosition"
+            );
+            leftDeviceRotationAction = CreatePoseAction(
+                "Quaternion",
+                "<XRController>{LeftHand}/deviceRotation",
+                "<OpenXRController>{LeftHand}/deviceRotation"
+            );
+            leftPointerPositionAction = CreatePoseAction(
+                "Vector3",
+                "<XRController>{LeftHand}/pointerPosition",
+                "<OpenXRController>{LeftHand}/pointerPosition"
+            );
+            leftPointerRotationAction = CreatePoseAction(
+                "Quaternion",
+                "<XRController>{LeftHand}/pointerRotation",
+                "<OpenXRController>{LeftHand}/pointerRotation"
+            );
 
-            rightTrackedAction = CreateButtonAction("<XRController>{RightHand}/isTracked");
-            rightDevicePositionAction = CreatePoseAction("<XRController>{RightHand}/devicePosition", "Vector3");
-            rightDeviceRotationAction = CreatePoseAction("<XRController>{RightHand}/deviceRotation", "Quaternion");
-            rightPointerPositionAction = CreatePoseAction("<XRController>{RightHand}/pointerPosition", "Vector3");
-            rightPointerRotationAction = CreatePoseAction("<XRController>{RightHand}/pointerRotation", "Quaternion");
+            rightTrackedAction = CreateButtonAction(
+                "<XRController>{RightHand}/isTracked",
+                "<OpenXRController>{RightHand}/isTracked"
+            );
+            rightDevicePositionAction = CreatePoseAction(
+                "Vector3",
+                "<XRController>{RightHand}/devicePosition",
+                "<OpenXRController>{RightHand}/devicePosition"
+            );
+            rightDeviceRotationAction = CreatePoseAction(
+                "Quaternion",
+                "<XRController>{RightHand}/deviceRotation",
+                "<OpenXRController>{RightHand}/deviceRotation"
+            );
+            rightPointerPositionAction = CreatePoseAction(
+                "Vector3",
+                "<XRController>{RightHand}/pointerPosition",
+                "<OpenXRController>{RightHand}/pointerPosition"
+            );
+            rightPointerRotationAction = CreatePoseAction(
+                "Quaternion",
+                "<XRController>{RightHand}/pointerRotation",
+                "<OpenXRController>{RightHand}/pointerRotation"
+            );
         }
 
-        private static InputAction CreateButtonAction(string binding)
+        private static InputAction CreateButtonAction(params string[] bindings)
         {
-            return new InputAction(type: InputActionType.Button, binding: binding);
+            InputAction action = new InputAction(type: InputActionType.Button);
+            for (int i = 0; i < bindings.Length; i++)
+            {
+                if (!string.IsNullOrWhiteSpace(bindings[i]))
+                {
+                    action.AddBinding(bindings[i]);
+                }
+            }
+
+            return action;
         }
 
-        private static InputAction CreatePoseAction(string binding, string expectedControlType)
+        private static InputAction CreatePoseAction(string expectedControlType, params string[] bindings)
         {
-            return new InputAction(
+            InputAction action = new InputAction(
                 type: InputActionType.PassThrough,
-                binding: binding,
                 expectedControlType: expectedControlType
             );
+
+            for (int i = 0; i < bindings.Length; i++)
+            {
+                if (!string.IsNullOrWhiteSpace(bindings[i]))
+                {
+                    action.AddBinding(bindings[i]);
+                }
+            }
+
+            return action;
         }
 
         private void EnableActions()
@@ -323,6 +381,7 @@ namespace AOI360.Runtime.XR
                 leftBodyVisual = EnsureControllerBodyVisual(
                     "RuntimeLeftControllerBody",
                     leftHandAnchor,
+                    LeftControllerResourcePath,
                     LeftControllerPrefabPath,
                     new Color(0.35f, 0.82f, 1f, 1f)
                 );
@@ -333,6 +392,7 @@ namespace AOI360.Runtime.XR
                 rightBodyVisual = EnsureControllerBodyVisual(
                     "RuntimeRightControllerBody",
                     rightHandAnchor,
+                    RightControllerResourcePath,
                     RightControllerPrefabPath,
                     new Color(1f, 0.82f, 0.35f, 1f)
                 );
@@ -352,6 +412,7 @@ namespace AOI360.Runtime.XR
         private static GameObject EnsureControllerBodyVisual(
             string name,
             Transform anchor,
+            string resourcePath,
             string prefabPath,
             Color fallbackColor
         )
@@ -370,6 +431,13 @@ namespace AOI360.Runtime.XR
                 return existingVisual;
             }
 
+            GameObject resourcePrefabInstance = TryInstantiateRuntimePrefab(name, anchor, resourcePath);
+            if (resourcePrefabInstance != null)
+            {
+                ApplyCompatibleControllerMaterials(resourcePrefabInstance, fallbackColor);
+                return resourcePrefabInstance;
+            }
+
             GameObject prefabInstance = TryInstantiateEditorPrefab(name, anchor, prefabPath);
             if (prefabInstance != null)
             {
@@ -378,6 +446,24 @@ namespace AOI360.Runtime.XR
             }
 
             return CreateBodyVisual(name, anchor, fallbackColor);
+        }
+
+        private static GameObject TryInstantiateRuntimePrefab(string name, Transform parent, string resourcePath)
+        {
+            if (string.IsNullOrWhiteSpace(resourcePath) || parent == null)
+            {
+                return null;
+            }
+
+            GameObject prefab = Resources.Load<GameObject>(resourcePath);
+            if (prefab == null)
+            {
+                return null;
+            }
+
+            GameObject instance = Object.Instantiate(prefab, parent, false);
+            instance.name = name;
+            return instance;
         }
 
         private static Transform ResolveVisualRootUnderAnchor(Transform rendererTransform, Transform anchor)

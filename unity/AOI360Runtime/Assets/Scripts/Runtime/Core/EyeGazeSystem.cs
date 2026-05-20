@@ -221,22 +221,25 @@ namespace EyeGaze.Runtime.Core
             float trackedValue = gazeTrackedAction.ReadValue<float>();
 
             bool isTracked = trackedValue > 0.5f;
-            if (isTracked)
+            // On HTC PCVR runtimes the vendor eye-tracker path is typically the most
+            // complete source because it also exposes pupil data and can remain valid
+            // when the generic <EyeGaze> device is unavailable or flaky.
+            if (TryReadViveEyeTrackerPose(out Vector3 vivePosition, out Quaternion viveRotation))
+            {
+                SetTrackingState(vivePosition, viveRotation, EyeTrackingSource.ViveEyeTracker);
+            }
+            else if (isTracked)
             {
                 SetTrackingState(gazePosition, gazeRotation, EyeTrackingSource.OpenXREyeGaze);
-            }
-            // Keep the standard OpenXR path as the primary source, but fall back to
-            // the HTC eye-tracker extension when the generic <EyeGaze> device is unavailable.
-            else if (!TryReadViveEyeTrackerPose(out Vector3 vivePosition, out Quaternion viveRotation))
-            {
-                hasValidGazePose = false;
-                currentTrackingSource = EyeTrackingSource.None;
                 lastLeftPupilDiameter = -1f;
                 lastRightPupilDiameter = -1f;
             }
             else
             {
-                SetTrackingState(vivePosition, viveRotation, EyeTrackingSource.ViveEyeTracker);
+                hasValidGazePose = false;
+                currentTrackingSource = EyeTrackingSource.None;
+                lastLeftPupilDiameter = -1f;
+                lastRightPupilDiameter = -1f;
             }
 
             hasValidGazePose = currentTrackingSource != EyeTrackingSource.None;
