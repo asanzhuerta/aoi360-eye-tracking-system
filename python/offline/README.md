@@ -60,6 +60,10 @@ Recommended entry points:
 
 The GUI launcher opens the same preprocessing pipeline documented below, but with a desktop window and live logs.
 
+If the purpose of the preprocessing run is to refresh the current `Windows x64` runtime build with new repository videos, continue afterwards with:
+
+- `docs/phase2/windows-build-refresh-runbook.md`
+
 ## Scripts
 
 ### 1. Extract frames

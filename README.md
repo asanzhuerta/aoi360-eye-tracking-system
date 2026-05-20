@@ -95,6 +95,7 @@ Phase 2 currently includes:
 - repository-first stimulus discovery from `data/input_videos` and `data/processed`, with `StreamingAssets` kept as the packaging path for later builds
 - controller material repair in runtime so Focus 3 controller prefabs no longer render as magenta under the current URP setup
 - CSV export routed to `data/exports/csv/` when the runtime can resolve the repository root
+- repository-local Windows builds through `Tools > AOI > Build Windows x64 Player`, keeping the `.exe` under `build/windows/` so the runtime preserves the same repo-backed CSV export flow
 
 ## AOI map contract
 
@@ -149,6 +150,7 @@ See the Phase 2 documentation for implementation details:
 - `docs/phase2/aoi-data-contract.md`
 - `docs/phase2/csv-schema.md`
 - `docs/phase2/validation-checklist.md`
+- `docs/phase2/windows-build-refresh-runbook.md`
 
 ## Offline Python quick start
 
