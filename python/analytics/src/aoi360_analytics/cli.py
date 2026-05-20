@@ -11,6 +11,7 @@ from aoi360_analytics.runtime_exports import analyze_runtime_exports, export_run
 
 
 DEFAULT_OUTPUT_ROOT = Path("data") / "exports" / "analytics"
+DEFAULT_INPUT_ROOT = Path("data") / "exports" / "csv"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,8 +26,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--input-dir",
-        default=None,
-        help="Directory containing one or more runtime CSVs. Used when --input-csv is omitted.",
+        default=str(DEFAULT_INPUT_ROOT),
+        help="Directory containing one or more runtime CSVs. Used when --input-csv is omitted. Defaults to data/exports/csv.",
     )
     parser.add_argument(
         "--manifest-root",

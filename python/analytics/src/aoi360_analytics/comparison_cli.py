@@ -16,6 +16,9 @@ from aoi360_analytics.source_comparison import (
 )
 
 
+DEFAULT_INPUT_ROOT = Path("data") / "exports" / "csv"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Compare manual and automatic AOI sources over the same Unity runtime CSV exports.",
@@ -28,8 +31,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--input-dir",
-        default=None,
-        help="Directory containing one or more runtime CSVs. Used when --input-csv is omitted.",
+        default=str(DEFAULT_INPUT_ROOT),
+        help="Directory containing one or more runtime CSVs. Used when --input-csv is omitted. Defaults to data/exports/csv.",
     )
     parser.add_argument(
         "--manual-manifest-root",

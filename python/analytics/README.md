@@ -13,15 +13,16 @@ The current branch starts the post-processing stage with a first practical pipel
 It currently supports:
 
 1. loading one or more runtime CSV files
-2. filtering out non-runtime CSVs automatically when `data/exports/` also contains benchmarks or previous analytics outputs
-3. validating the expected export schema
-4. estimating the effective fixation cadence per session/video
-5. producing a practical quality report per session and per source CSV file
-6. computing AOI-level dwell time, first-fixation timing, visit counts, and normalized time-share metrics
-7. aggregating quality and AOI engagement metrics by participant, by video, and by `video x AOI`
-8. estimating AOI-to-AOI transition counts from the ordered fixation timeline
-9. enriching AOI ids with names/categories from the AOI sequence manifests when they are available
-10. reapplying two different AOI-manifest roots over the same Unity runtime logs in order to compare `manual vs automatic` AOI assignments without re-recording the session
+2. consuming Unity runtime CSVs from `data/exports/csv/` by default
+3. still filtering out non-runtime CSVs automatically when a broader export folder also contains benchmarks or previous analytics outputs
+4. validating the expected export schema
+5. estimating the effective fixation cadence per session/video
+6. producing a practical quality report per session and per source CSV file
+7. computing AOI-level dwell time, first-fixation timing, visit counts, and normalized time-share metrics
+8. aggregating quality and AOI engagement metrics by participant, by video, and by `video x AOI`
+9. estimating AOI-to-AOI transition counts from the ordered fixation timeline
+10. enriching AOI ids with names/categories from the AOI sequence manifests when they are available
+11. reapplying two different AOI-manifest roots over the same Unity runtime logs in order to compare `manual vs automatic` AOI assignments without re-recording the session
 
 ## Phase 3 manual: installation
 
@@ -35,7 +36,7 @@ pip install -e python/analytics
 
 The expected Unity input location is:
 
-- `data/exports/`
+- `data/exports/csv/`
 
 That folder is now the repository-root handoff between the Unity runtime and the analytics stage whenever the runtime can resolve the repo root.
 
@@ -44,20 +45,20 @@ That folder is now the repository-root handoff between the Unity runtime and the
 Analyze one directory of Unity runtime exports:
 
 ```bash
-python python/analytics/scripts/analyze_runtime_exports.py --input-dir data/exports --manifest-root data/processed/metadata
+python python/analytics/scripts/analyze_runtime_exports.py --input-dir data/exports/csv --manifest-root data/processed/metadata
 ```
 
 Analyze explicit CSV files:
 
 ```bash
-python python/analytics/scripts/analyze_runtime_exports.py --input-csv data/exports/session_01.csv --input-csv data/exports/session_02.csv
+python python/analytics/scripts/analyze_runtime_exports.py --input-csv data/exports/csv/session_01.csv --input-csv data/exports/csv/session_02.csv
 ```
 
 Compare one set of runtime CSVs against two AOI sources:
 
 ```bash
 python python/analytics/scripts/compare_runtime_aoi_sources.py \
-  --input-dir data/exports \
+  --input-dir data/exports/csv \
   --manual-manifest-root data/manual_gt/metadata \
   --automatic-manifest-root data/processed/metadata \
   --match-field aoi_category

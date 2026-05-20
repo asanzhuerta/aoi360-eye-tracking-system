@@ -189,7 +189,7 @@ namespace AOI360.Runtime.Logging
                 return;
             }
 
-            // Prefer the repository export folder so Unity runtime logs land
+            // Prefer the repository raw-CSV folder so Unity runtime logs land
             // next to the Python pipeline artefacts and analytics can consume
             // them without a manual copy step. Packaged builds still fall back
             // to persistentDataPath when the repo root cannot be resolved.
@@ -212,10 +212,10 @@ namespace AOI360.Runtime.Logging
         {
             if (ExperimentStimulusCatalog.TryResolveRepositoryRoot(out string repositoryRoot))
             {
-                return Path.Combine(repositoryRoot, "data", "exports");
+                return Path.Combine(repositoryRoot, "data", "exports", "csv");
             }
 
-            return Path.Combine(Application.persistentDataPath, "Exports");
+            return Path.Combine(Application.persistentDataPath, "Exports", "csv");
         }
 
         private void TryStartRecording()

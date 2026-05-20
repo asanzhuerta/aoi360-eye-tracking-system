@@ -34,7 +34,7 @@ Unity runtime for:
 - AOI lookup on equirectangular ID maps
 - AOI overlay rendering on the 360 sphere
 - fixation visualization and trail rendering
-- fixation-based CSV logging into `data/exports/` when the repo root is available
+- fixation-based CSV logging into `data/exports/csv/` when the repo root is available
 
 ### 3. Analytics
 Python post-hoc analysis for:
@@ -94,7 +94,7 @@ Phase 2 currently includes:
 - projection normalization for non-2:1 source videos so wide clips such as `3840x2160` can still be tested on the 360 sphere
 - repository-first stimulus discovery from `data/input_videos` and `data/processed`, with `StreamingAssets` kept as the packaging path for later builds
 - controller material repair in runtime so Focus 3 controller prefabs no longer render as magenta under the current URP setup
-- CSV export routed to `data/exports/` when the runtime can resolve the repository root
+- CSV export routed to `data/exports/csv/` when the runtime can resolve the repository root
 
 ## AOI map contract
 
@@ -184,7 +184,7 @@ The analytics package now includes a first post-processing pass for the fixation
 It can:
 
 - load one or more runtime CSVs
-- ignore non-runtime CSVs when `data/exports/` also contains benchmark artefacts
+- read runtime CSVs from `data/exports/csv/` by default while keeping analytics outputs under `data/exports/analytics/`
 - normalize and validate the export schema
 - estimate the effective fixation cadence per session
 - summarize session quality and valid-tracking coverage
