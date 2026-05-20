@@ -64,6 +64,23 @@ If you want the direct desktop launcher for the preprocessing GUI, use:
 
 - `Launch_AOI360_Preprocess_GUI.bat`
 
+## Current recommended workflow
+
+The current practical workflow across the repository is:
+
+1. add or update one source video under `data/input_videos/`
+2. rebuild its AOI assets with the offline Python pipeline in `python/offline/`
+3. rebuild the repository-local `Windows x64` player from Unity with `Tools > AOI > Build Windows x64 Player`
+4. run the VR session from `build/windows/AOI360Runtime/AOI360Runtime.exe`
+5. collect runtime CSV exports from `data/exports/csv/`
+
+Use these entry points depending on what you need:
+
+- preprocessing and AOI asset generation -> `python/offline/README.md`
+- Unity runtime and Windows build flow -> `docs/phase2/README.md`
+- refresh runbook for new videos -> `docs/phase2/windows-build-refresh-runbook.md`
+- post-processing and analytics -> `python/analytics/README.md`
+
 ## Phase 2 goal
 
 Build a stable end-to-end prototype with:
