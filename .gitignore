@@ -46,6 +46,7 @@ docs/latex/*.log
 docs/latex/*.out
 docs/latex/*.pdf
 docs/latex/*.synctex.gz
+docs/latex/
 
 # Generated / heavy data
 data/input_videos/*
