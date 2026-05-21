@@ -1,10 +1,12 @@
 from aoi360_analytics.runtime_exports import (
     DEFAULT_FIXATION_STEP_MS,
+    DEFAULT_SESSION_FILTER,
     RUNTIME_REQUIRED_COLUMNS,
     RuntimeAnalyticsResult,
     analyze_runtime_exports,
     analyze_runtime_rows,
     build_aoi_summary,
+    build_session_inclusion_report,
     build_participant_summary,
     build_session_summary,
     build_session_quality_report,
@@ -14,8 +16,10 @@ from aoi360_analytics.runtime_exports import (
     build_video_summary,
     discover_runtime_csv_paths,
     export_runtime_analytics,
+    filter_runtime_rows_by_session_inclusion,
     load_manifest_index,
     load_runtime_csvs,
+    VALID_SESSION_FILTERS,
 )
 from aoi360_analytics.source_comparison import (
     DEFAULT_COMPARISON_MATCH_FIELD,
@@ -28,11 +32,13 @@ from aoi360_analytics.source_comparison import (
 
 __all__ = [
     "DEFAULT_FIXATION_STEP_MS",
+    "DEFAULT_SESSION_FILTER",
     "RUNTIME_REQUIRED_COLUMNS",
     "RuntimeAnalyticsResult",
     "analyze_runtime_exports",
     "analyze_runtime_rows",
     "build_aoi_summary",
+    "build_session_inclusion_report",
     "build_participant_summary",
     "build_session_summary",
     "build_session_quality_report",
@@ -42,8 +48,10 @@ __all__ = [
     "build_video_summary",
     "discover_runtime_csv_paths",
     "export_runtime_analytics",
+    "filter_runtime_rows_by_session_inclusion",
     "load_manifest_index",
     "load_runtime_csvs",
+    "VALID_SESSION_FILTERS",
     "DEFAULT_COMPARISON_MATCH_FIELD",
     "RuntimeSourceComparisonResult",
     "compare_runtime_aoi_sources",

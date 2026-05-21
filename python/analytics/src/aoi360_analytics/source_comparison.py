@@ -12,13 +12,17 @@ import pandas as pd
 from PIL import Image
 
 from aoi360_analytics.runtime_exports import (
+    DEFAULT_SESSION_FILTER,
     DEFAULT_MANIFEST_GLOB,
     MANIFEST_COLUMNS,
+    SESSION_INCLUSION_COLUMNS,
     SESSION_GROUP_COLUMNS,
+    VALID_SESSION_FILTERS,
     RuntimeAnalyticsResult,
     analyze_runtime_rows,
     discover_runtime_csv_paths,
     export_runtime_analytics,
+    filter_runtime_rows_by_session_inclusion,
     load_runtime_csvs,
 )
 
@@ -128,6 +132,25 @@ VIDEO_MATCH_DELTA_COLUMNS = [
     "manual_mean_time_to_first_fixation_ratio_when_hit",
     "automatic_mean_time_to_first_fixation_ratio_when_hit",
     "automatic_minus_manual_mean_time_to_first_fixation_ratio_when_hit",
+]
+COMPARISON_SESSION_INCLUSION_COLUMNS = [
+    "participant_id",
+    "session_id",
+    "video_id",
+    "source_file_count",
+    "source_files",
+    "runtime_tracking_usable",
+    "runtime_aoi_usable",
+    "runtime_quality_status",
+    "manual_tracking_usable",
+    "manual_aoi_usable",
+    "manual_quality_status",
+    "automatic_tracking_usable",
+    "automatic_aoi_usable",
+    "automatic_quality_status",
+    "session_filter",
+    "included_by_filter",
+    "exclusion_reason",
 ]
 
 
@@ -270,6 +293,7 @@ class RuntimeSourceComparisonResult:
     manual_result: RuntimeAnalyticsResult
     automatic_result: RuntimeAnalyticsResult
     comparison_rows: pd.DataFrame
+    session_inclusion: pd.DataFrame
     session_alignment: pd.DataFrame
     category_confusion: pd.DataFrame
     match_field_confusion: pd.DataFrame
@@ -277,8 +301,12 @@ class RuntimeSourceComparisonResult:
     automatic_video_match_summary: pd.DataFrame
     video_match_deltas: pd.DataFrame
     match_field: str
+    session_filter: str
     manual_manifest_root: Path
     automatic_manifest_root: Path
+    input_row_count: int
+    input_source_file_count: int
+    input_session_count: int
 
 
 def compare_runtime_aoi_sources(
@@ -290,17 +318,23 @@ def compare_runtime_aoi_sources(
     manual_maps_root: str | Path | None = None,
     automatic_maps_root: str | Path | None = None,
     match_field: str = DEFAULT_COMPARISON_MATCH_FIELD,
+    session_filter: str = DEFAULT_SESSION_FILTER,
 ) -> RuntimeSourceComparisonResult:
     """Reapply two AOI sources over the same runtime gaze logs and compare them."""
 
     if match_field not in VALID_COMPARISON_MATCH_FIELDS:
         valid_fields = ", ".join(sorted(VALID_COMPARISON_MATCH_FIELDS))
         raise ValueError(f"Unsupported match field '{match_field}'. Expected one of: {valid_fields}.")
+    if session_filter not in VALID_SESSION_FILTERS:
+        valid_filters = ", ".join(sorted(VALID_SESSION_FILTERS))
+        raise ValueError(f"Unsupported session filter '{session_filter}'. Expected one of: {valid_filters}.")
 
     csv_paths = discover_runtime_csv_paths(input_csvs=input_csvs, input_dir=input_dir)
     raw_rows = load_runtime_csvs(csv_paths)
     raw_rows = raw_rows.copy()
     raw_rows.insert(0, "row_id", np.arange(len(raw_rows), dtype=np.int64))
+    input_row_count = int(len(raw_rows))
+    input_source_file_count = int(raw_rows["source_file"].dropna().astype(str).nunique())
 
     manual_bundle = load_aoi_source_bundle(manual_manifest_root, maps_root=manual_maps_root)
     automatic_bundle = load_aoi_source_bundle(automatic_manifest_root, maps_root=automatic_maps_root)
@@ -308,19 +342,60 @@ def compare_runtime_aoi_sources(
     manual_rows = reassign_runtime_rows_from_bundle(raw_rows, manual_bundle, source_label="manual")
     automatic_rows = reassign_runtime_rows_from_bundle(raw_rows, automatic_bundle, source_label="automatic")
 
-    manual_result = analyze_runtime_rows(
+    runtime_result_all = analyze_runtime_rows(
+        raw_rows.drop(columns=["row_id"], errors="ignore"),
+        session_filter=DEFAULT_SESSION_FILTER,
+    )
+    manual_result_all = analyze_runtime_rows(
         manual_rows.drop(columns=["row_id"], errors="ignore"),
         manifest_root=manual_bundle.manifest_root,
+        session_filter=DEFAULT_SESSION_FILTER,
     )
-    automatic_result = analyze_runtime_rows(
+    automatic_result_all = analyze_runtime_rows(
         automatic_rows.drop(columns=["row_id"], errors="ignore"),
         manifest_root=automatic_bundle.manifest_root,
+        session_filter=DEFAULT_SESSION_FILTER,
+    )
+
+    session_inclusion = build_comparison_session_inclusion_report(
+        runtime_result=runtime_result_all,
+        manual_result=manual_result_all,
+        automatic_result=automatic_result_all,
+        session_filter=session_filter,
+    )
+
+    filtered_raw_rows = filter_runtime_rows_by_session_inclusion(raw_rows, session_inclusion)
+    filtered_manual_rows = filter_runtime_rows_by_session_inclusion(manual_rows, session_inclusion)
+    filtered_automatic_rows = filter_runtime_rows_by_session_inclusion(automatic_rows, session_inclusion)
+
+    manual_result_filtered = analyze_runtime_rows(
+        filtered_manual_rows.drop(columns=["row_id"], errors="ignore"),
+        manifest_root=manual_bundle.manifest_root,
+        session_filter=DEFAULT_SESSION_FILTER,
+    )
+    automatic_result_filtered = analyze_runtime_rows(
+        filtered_automatic_rows.drop(columns=["row_id"], errors="ignore"),
+        manifest_root=automatic_bundle.manifest_root,
+        session_filter=DEFAULT_SESSION_FILTER,
+    )
+
+    manual_result = _apply_comparison_session_inclusion_to_runtime_result(
+        all_result=manual_result_all,
+        filtered_result=manual_result_filtered,
+        comparison_session_inclusion=session_inclusion,
+        session_filter=session_filter,
+    )
+    automatic_result = _apply_comparison_session_inclusion_to_runtime_result(
+        all_result=automatic_result_all,
+        filtered_result=automatic_result_filtered,
+        comparison_session_inclusion=session_inclusion,
+        session_filter=session_filter,
     )
 
     comparison_rows = build_comparison_rows(
-        raw_rows=raw_rows,
-        manual_rows=manual_rows,
-        automatic_rows=automatic_rows,
+        raw_rows=filtered_raw_rows,
+        manual_rows=filtered_manual_rows,
+        automatic_rows=filtered_automatic_rows,
         manual_manifest_index=manual_bundle.manifest_index,
         automatic_manifest_index=automatic_bundle.manifest_index,
         match_field=match_field,
@@ -353,10 +428,11 @@ def compare_runtime_aoi_sources(
     )
 
     return RuntimeSourceComparisonResult(
-        raw_rows=raw_rows.drop(columns=["row_id"], errors="ignore"),
+        raw_rows=filtered_raw_rows.drop(columns=["row_id"], errors="ignore"),
         manual_result=manual_result,
         automatic_result=automatic_result,
         comparison_rows=comparison_rows.drop(columns=["row_id"], errors="ignore"),
+        session_inclusion=session_inclusion,
         session_alignment=session_alignment,
         category_confusion=category_confusion,
         match_field_confusion=match_field_confusion,
@@ -364,8 +440,12 @@ def compare_runtime_aoi_sources(
         automatic_video_match_summary=automatic_video_match_summary,
         video_match_deltas=video_match_deltas,
         match_field=match_field,
+        session_filter=session_filter,
         manual_manifest_root=manual_bundle.manifest_root,
         automatic_manifest_root=automatic_bundle.manifest_root,
+        input_row_count=input_row_count,
+        input_source_file_count=input_source_file_count,
+        input_session_count=runtime_result_all.input_session_count,
     )
 
 
@@ -648,6 +728,168 @@ def build_session_alignment_summary(comparison_rows: pd.DataFrame, *, match_fiel
     return summary[COMPARISON_SESSION_ALIGNMENT_COLUMNS]
 
 
+def build_comparison_session_inclusion_report(
+    *,
+    runtime_result: RuntimeAnalyticsResult,
+    manual_result: RuntimeAnalyticsResult,
+    automatic_result: RuntimeAnalyticsResult,
+    session_filter: str = DEFAULT_SESSION_FILTER,
+) -> pd.DataFrame:
+    """Decide which session/video runs enter one manual-vs-automatic comparison pass."""
+
+    session_keys = (
+        pd.concat(
+            [
+                runtime_result.session_inclusion[SESSION_GROUP_COLUMNS],
+                manual_result.session_inclusion[SESSION_GROUP_COLUMNS],
+                automatic_result.session_inclusion[SESSION_GROUP_COLUMNS],
+            ],
+            ignore_index=True,
+        )
+        .drop_duplicates()
+        .reset_index(drop=True)
+    )
+    if session_keys.empty:
+        return pd.DataFrame(columns=COMPARISON_SESSION_INCLUSION_COLUMNS)
+
+    runtime_quality = runtime_result.session_quality.rename(
+        columns={
+            "source_file_count": "source_file_count",
+            "source_files": "source_files",
+            "is_usable_for_tracking_analysis": "runtime_tracking_usable",
+            "is_usable_for_aoi_analysis": "runtime_aoi_usable",
+            "quality_status": "runtime_quality_status",
+        }
+    )[
+        SESSION_GROUP_COLUMNS
+        + [
+            "source_file_count",
+            "source_files",
+            "runtime_tracking_usable",
+            "runtime_aoi_usable",
+            "runtime_quality_status",
+        ]
+    ]
+    manual_quality = manual_result.session_quality.rename(
+        columns={
+            "is_usable_for_tracking_analysis": "manual_tracking_usable",
+            "is_usable_for_aoi_analysis": "manual_aoi_usable",
+            "quality_status": "manual_quality_status",
+        }
+    )[
+        SESSION_GROUP_COLUMNS
+        + [
+            "manual_tracking_usable",
+            "manual_aoi_usable",
+            "manual_quality_status",
+        ]
+    ]
+    automatic_quality = automatic_result.session_quality.rename(
+        columns={
+            "is_usable_for_tracking_analysis": "automatic_tracking_usable",
+            "is_usable_for_aoi_analysis": "automatic_aoi_usable",
+            "quality_status": "automatic_quality_status",
+        }
+    )[
+        SESSION_GROUP_COLUMNS
+        + [
+            "automatic_tracking_usable",
+            "automatic_aoi_usable",
+            "automatic_quality_status",
+        ]
+    ]
+
+    inclusion = session_keys.merge(runtime_quality, on=SESSION_GROUP_COLUMNS, how="left")
+    inclusion = inclusion.merge(manual_quality, on=SESSION_GROUP_COLUMNS, how="left")
+    inclusion = inclusion.merge(automatic_quality, on=SESSION_GROUP_COLUMNS, how="left")
+
+    bool_columns = [
+        "runtime_tracking_usable",
+        "runtime_aoi_usable",
+        "manual_tracking_usable",
+        "manual_aoi_usable",
+        "automatic_tracking_usable",
+        "automatic_aoi_usable",
+    ]
+    for column_name in bool_columns:
+        inclusion[column_name] = inclusion[column_name].fillna(False).astype(bool)
+
+    inclusion["source_file_count"] = inclusion["source_file_count"].fillna(0).astype(int)
+    for column_name in ["source_files", "runtime_quality_status", "manual_quality_status", "automatic_quality_status"]:
+        inclusion[column_name] = inclusion[column_name].fillna("")
+
+    if session_filter == "all":
+        inclusion["included_by_filter"] = True
+        inclusion["exclusion_reason"] = ""
+    elif session_filter == "tracking_usable":
+        inclusion["included_by_filter"] = inclusion["runtime_tracking_usable"]
+        inclusion["exclusion_reason"] = inclusion["included_by_filter"].map(
+            lambda is_included: "" if is_included else "not_tracking_usable"
+        )
+    else:
+        manual_usable = inclusion["manual_aoi_usable"]
+        automatic_usable = inclusion["automatic_aoi_usable"]
+        inclusion["included_by_filter"] = manual_usable & automatic_usable
+        inclusion["exclusion_reason"] = np.select(
+            [
+                inclusion["included_by_filter"],
+                ~manual_usable & ~automatic_usable,
+                ~manual_usable,
+                ~automatic_usable,
+            ],
+            [
+                "",
+                "manual_and_automatic_not_aoi_usable",
+                "manual_not_aoi_usable",
+                "automatic_not_aoi_usable",
+            ],
+            default="not_aoi_usable",
+        )
+
+    inclusion["session_filter"] = session_filter
+    return inclusion[COMPARISON_SESSION_INCLUSION_COLUMNS]
+
+
+def _apply_comparison_session_inclusion_to_runtime_result(
+    *,
+    all_result: RuntimeAnalyticsResult,
+    filtered_result: RuntimeAnalyticsResult,
+    comparison_session_inclusion: pd.DataFrame,
+    session_filter: str,
+) -> RuntimeAnalyticsResult:
+    result_session_inclusion = (
+        all_result.session_quality.merge(
+            comparison_session_inclusion[SESSION_GROUP_COLUMNS + ["included_by_filter", "exclusion_reason"]],
+            on=SESSION_GROUP_COLUMNS,
+            how="left",
+        )
+        .copy()
+    )
+    result_session_inclusion["session_filter"] = session_filter
+    result_session_inclusion["included_by_filter"] = (
+        result_session_inclusion["included_by_filter"].fillna(False).astype(bool)
+    )
+    result_session_inclusion["exclusion_reason"] = result_session_inclusion["exclusion_reason"].fillna("")
+    result_session_inclusion = result_session_inclusion[SESSION_INCLUSION_COLUMNS]
+
+    return RuntimeAnalyticsResult(
+        raw_rows=filtered_result.raw_rows,
+        source_file_summary=filtered_result.source_file_summary,
+        session_summary=filtered_result.session_summary,
+        session_quality=filtered_result.session_quality,
+        session_inclusion=result_session_inclusion,
+        participant_summary=filtered_result.participant_summary,
+        video_summary=filtered_result.video_summary,
+        aoi_summary=filtered_result.aoi_summary,
+        video_aoi_summary=filtered_result.video_aoi_summary,
+        transition_summary=filtered_result.transition_summary,
+        manifest_index=filtered_result.manifest_index,
+        session_filter=session_filter,
+        input_row_count=all_result.input_row_count,
+        input_session_count=all_result.input_session_count,
+    )
+
+
 def build_confusion_summary(
     comparison_rows: pd.DataFrame,
     *,
@@ -815,6 +1057,7 @@ def export_runtime_source_comparison(
     automatic_export_paths = export_runtime_analytics(comparison_result.automatic_result, output_dir=automatic_output_dir)
 
     comparison_rows_path = output_directory / "comparison_rows_reassigned.csv"
+    session_inclusion_path = output_directory / "comparison_session_inclusion.csv"
     session_alignment_path = output_directory / "comparison_session_alignment.csv"
     category_confusion_path = output_directory / "comparison_category_confusion.csv"
     match_field_confusion_path = output_directory / "comparison_match_field_confusion.csv"
@@ -824,6 +1067,7 @@ def export_runtime_source_comparison(
     summary_json_path = output_directory / "comparison_summary_snapshot.json"
 
     comparison_result.comparison_rows.to_csv(comparison_rows_path, index=False)
+    comparison_result.session_inclusion.to_csv(session_inclusion_path, index=False)
     comparison_result.session_alignment.to_csv(session_alignment_path, index=False)
     comparison_result.category_confusion.to_csv(category_confusion_path, index=False)
     comparison_result.match_field_confusion.to_csv(match_field_confusion_path, index=False)
@@ -836,9 +1080,18 @@ def export_runtime_source_comparison(
     selected_match_valid_rows = int(valid_rows["selected_match_valid"].sum()) if not valid_rows.empty else 0
     category_match_valid_rows = int(valid_rows["category_match_valid"].sum()) if not valid_rows.empty else 0
     snapshot = {
-        "input_row_count": int(len(comparison_result.raw_rows)),
-        "input_source_file_count": int(comparison_result.raw_rows["source_file"].dropna().astype(str).nunique()),
+        "session_filter": comparison_result.session_filter,
+        "input_row_count": comparison_result.input_row_count,
+        "row_count": int(len(comparison_result.raw_rows)),
+        "input_source_file_count": comparison_result.input_source_file_count,
+        "input_session_count": comparison_result.input_session_count,
         "session_count": int(len(comparison_result.session_alignment)),
+        "included_session_count": int(comparison_result.session_inclusion["included_by_filter"].sum())
+        if not comparison_result.session_inclusion.empty
+        else 0,
+        "excluded_session_count": int((~comparison_result.session_inclusion["included_by_filter"]).sum())
+        if not comparison_result.session_inclusion.empty
+        else 0,
         "video_count": int(comparison_result.raw_rows["video_id"].dropna().astype(str).nunique()),
         "match_field": comparison_result.match_field,
         "manual_manifest_root": str(comparison_result.manual_manifest_root),
@@ -859,6 +1112,7 @@ def export_runtime_source_comparison(
         "manual_output_dir": manual_output_dir,
         "automatic_output_dir": automatic_output_dir,
         "comparison_rows_path": comparison_rows_path,
+        "session_inclusion_path": session_inclusion_path,
         "session_alignment_path": session_alignment_path,
         "category_confusion_path": category_confusion_path,
         "match_field_confusion_path": match_field_confusion_path,

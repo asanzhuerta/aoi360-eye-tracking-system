@@ -14,6 +14,7 @@ from aoi360_analytics.source_comparison import (
     compare_runtime_aoi_sources,
     export_runtime_source_comparison,
 )
+from aoi360_analytics.runtime_exports import DEFAULT_SESSION_FILTER, VALID_SESSION_FILTERS
 
 
 DEFAULT_INPUT_ROOT = Path("data") / "exports" / "csv"
@@ -64,6 +65,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--session-filter",
+        default=DEFAULT_SESSION_FILTER,
+        choices=sorted(VALID_SESSION_FILTERS),
+        help=(
+            "Filter participant/session/video runs before comparing manual and automatic AOI sources. "
+            "`aoi_usable` requires the session to be AOI-usable in both sources. "
+            f"Default: {DEFAULT_SESSION_FILTER}."
+        ),
+    )
+    parser.add_argument(
         "--output-dir",
         default=None,
         help=(
@@ -89,6 +100,7 @@ def main() -> None:
         manual_maps_root=args.manual_maps_root,
         automatic_maps_root=args.automatic_maps_root,
         match_field=args.match_field,
+        session_filter=args.session_filter,
     )
     export_paths = export_runtime_source_comparison(
         comparison_result,
@@ -98,6 +110,7 @@ def main() -> None:
     print(f"[aoi360_compare] Manual analytics: {export_paths['manual_output_dir']}")
     print(f"[aoi360_compare] Automatic analytics: {export_paths['automatic_output_dir']}")
     print(f"[aoi360_compare] Row-wise comparison: {export_paths['comparison_rows_path']}")
+    print(f"[aoi360_compare] Session inclusion: {export_paths['session_inclusion_path']}")
     print(f"[aoi360_compare] Session alignment: {export_paths['session_alignment_path']}")
     print(f"[aoi360_compare] Category confusion: {export_paths['category_confusion_path']}")
     print(f"[aoi360_compare] Match-field confusion: {export_paths['match_field_confusion_path']}")

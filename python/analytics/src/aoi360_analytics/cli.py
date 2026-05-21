@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from aoi360_analytics.runtime_exports import analyze_runtime_exports, export_runtime_analytics
+from aoi360_analytics.runtime_exports import (
+    DEFAULT_SESSION_FILTER,
+    VALID_SESSION_FILTERS,
+    analyze_runtime_exports,
+    export_runtime_analytics,
+)
 
 
 DEFAULT_OUTPUT_ROOT = Path("data") / "exports" / "analytics"
@@ -35,6 +40,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory containing AOI sequence manifests used to enrich AOI ids with names and categories.",
     )
     parser.add_argument(
+        "--session-filter",
+        default=DEFAULT_SESSION_FILTER,
+        choices=sorted(VALID_SESSION_FILTERS),
+        help=(
+            "Filter participant/session/video runs before aggregation. "
+            f"Default: {DEFAULT_SESSION_FILTER}."
+        ),
+    )
+    parser.add_argument(
         "--output-dir",
         default=None,
         help="Output directory for normalized rows and summary tables. Defaults to a timestamped folder in data/exports/analytics.",
@@ -53,6 +67,7 @@ def main() -> None:
         input_csvs=args.input_csvs,
         input_dir=args.input_dir,
         manifest_root=args.manifest_root,
+        session_filter=args.session_filter,
     )
     export_paths = export_runtime_analytics(
         analytics_result,
@@ -63,6 +78,7 @@ def main() -> None:
     print(f"[aoi360_analytics] Source file summary: {export_paths['source_file_summary_path']}")
     print(f"[aoi360_analytics] Session summary: {export_paths['session_summary_path']}")
     print(f"[aoi360_analytics] Session quality: {export_paths['session_quality_path']}")
+    print(f"[aoi360_analytics] Session inclusion: {export_paths['session_inclusion_path']}")
     print(f"[aoi360_analytics] Participant summary: {export_paths['participant_summary_path']}")
     print(f"[aoi360_analytics] Video summary: {export_paths['video_summary_path']}")
     print(f"[aoi360_analytics] AOI summary: {export_paths['aoi_summary_path']}")

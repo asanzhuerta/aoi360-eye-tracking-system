@@ -40,6 +40,12 @@ The expected Unity input location is:
 
 That folder is now the repository-root handoff between the Unity runtime and the analytics stage whenever the runtime can resolve the repo root.
 
+If the Windows build must be refreshed because a new video was added or its AOIs were regenerated, follow the operational runbook first:
+
+- `docs/phase2/windows-build-refresh-runbook.md`
+
+That runbook ends exactly at the Phase 3 handoff point: fresh runtime CSVs inside `data/exports/csv/`.
+
 ## Script
 
 Analyze one directory of Unity runtime exports:
@@ -47,6 +53,18 @@ Analyze one directory of Unity runtime exports:
 ```bash
 python python/analytics/scripts/analyze_runtime_exports.py --input-dir data/exports/csv --manifest-root data/processed/metadata
 ```
+
+Analyze only sessions that pass the AOI-usable quality gate:
+
+```bash
+python python/analytics/scripts/analyze_runtime_exports.py --input-dir data/exports/csv --manifest-root data/processed/metadata --session-filter aoi_usable
+```
+
+Available session filters:
+
+- `all` -> include every discovered runtime session
+- `tracking_usable` -> keep only sessions usable for tracking analysis
+- `aoi_usable` -> keep only sessions usable for AOI analysis
 
 Analyze explicit CSV files:
 
@@ -64,6 +82,23 @@ python python/analytics/scripts/compare_runtime_aoi_sources.py \
   --match-field aoi_category
 ```
 
+Compare only sessions that are AOI-usable in both sources:
+
+```bash
+python python/analytics/scripts/compare_runtime_aoi_sources.py \
+  --input-dir data/exports/csv \
+  --manual-manifest-root data/manual_gt/metadata \
+  --automatic-manifest-root data/processed/metadata \
+  --match-field aoi_category \
+  --session-filter aoi_usable
+```
+
+Comparison session filters:
+
+- `all` -> compare every discovered runtime session
+- `tracking_usable` -> compare only sessions that pass the tracking-quality gate
+- `aoi_usable` -> compare only sessions that are AOI-usable in both the `manual` and `automatic` sources
+
 For a quick self-check of the comparison pipeline before the manual package is frozen, both roots can temporarily point to the same manifest folder. In that case, the session-alignment and confusion outputs should converge toward perfect agreement.
 
 ## Outputs
@@ -74,6 +109,7 @@ The analytics script writes one timestamped folder under `data/exports/analytics
 - `runtime_source_file_summary.csv`
 - `runtime_session_summary.csv`
 - `runtime_session_quality.csv`
+- `runtime_session_inclusion.csv`
 - `runtime_participant_summary.csv`
 - `runtime_video_summary.csv`
 - `runtime_aoi_summary.csv`
@@ -86,6 +122,7 @@ The comparison script writes one timestamped folder under `data/exports/analytic
 - `manual/` -> the full analytics export for the manual AOI source
 - `automatic/` -> the full analytics export for the automatic AOI source
 - `comparison_rows_reassigned.csv`
+- `comparison_session_inclusion.csv`
 - `comparison_session_alignment.csv`
 - `comparison_category_confusion.csv`
 - `comparison_match_field_confusion.csv`
@@ -97,6 +134,8 @@ The comparison script writes one timestamped folder under `data/exports/analytic
 ## Metric notes
 
 The current session-quality layer is heuristic on purpose: it gives a fast first pass over whether a run is usable for tracking analysis and whether it is usable for AOI analysis.
+
+The new `--session-filter` option lets the downstream aggregation layer follow that quality gate directly instead of only reporting it. The exported `runtime_session_inclusion.csv` file makes the inclusion/exclusion decision explicit for each participant/session/video run.
 
 The current AOI summary is aligned with the Unity Phase 2 export and now adds normalized metrics:
 
@@ -129,6 +168,8 @@ The comparison layer reuses the same runtime rows and recomputes AOI ids from tw
 - both bundles are applied to the same `video_id`, `frame_index`, and `uv` timeline exported by Unity
 
 This lets the project answer the downstream methodological question directly: whether changing the AOI source changes the gaze metrics that would later be interpreted in the study.
+
+The new comparison-level `--session-filter` option lets the project exclude weak sessions before the manual-vs-automatic agreement step. The exported `comparison_session_inclusion.csv` table makes that gate explicit and records whether a session was excluded for tracking quality or because one or both AOI sources were not AOI-usable.
 
 The semantic comparison key is configurable through `--match-field`:
 

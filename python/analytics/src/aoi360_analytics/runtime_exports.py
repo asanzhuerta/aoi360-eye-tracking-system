@@ -58,6 +58,8 @@ DEFAULT_FIXATION_STEP_MS = 250.0
 DEFAULT_MANIFEST_GLOB = "*_aoi_sequence_manifest.json"
 DEFAULT_CONTINUITY_GAP_FACTOR = 1.5
 DEFAULT_EXCLUDED_EXPORT_FOLDERS = {"analytics", "benchmarks"}
+DEFAULT_SESSION_FILTER = "all"
+VALID_SESSION_FILTERS = {"all", "tracking_usable", "aoi_usable"}
 MIN_SESSION_ROWS_FOR_ANALYSIS = 3
 MIN_VALID_RATIO_FOR_TRACKING_USABILITY = 0.5
 MIN_ASSIGNED_VALID_RATIO_FOR_AOI_USABILITY = 0.2
@@ -203,6 +205,11 @@ SESSION_QUALITY_COLUMNS = [
     "quality_issue_count",
     "quality_issues",
 ]
+SESSION_INCLUSION_COLUMNS = SESSION_QUALITY_COLUMNS + [
+    "session_filter",
+    "included_by_filter",
+    "exclusion_reason",
+]
 SOURCE_FILE_SUMMARY_COLUMNS = [
     "source_file",
     "session_runs_total",
@@ -248,16 +255,29 @@ class RuntimeAnalyticsResult:
     source_file_summary: pd.DataFrame
     session_summary: pd.DataFrame
     session_quality: pd.DataFrame
+    session_inclusion: pd.DataFrame
     participant_summary: pd.DataFrame
     video_summary: pd.DataFrame
     aoi_summary: pd.DataFrame
     video_aoi_summary: pd.DataFrame
     transition_summary: pd.DataFrame
     manifest_index: pd.DataFrame
+    session_filter: str
+    input_row_count: int
+    input_session_count: int
 
 
 def _empty_dataframe(columns: list[str]) -> pd.DataFrame:
     return pd.DataFrame(columns=columns)
+
+
+def _validate_session_filter(session_filter: str) -> str:
+    normalized_filter = str(session_filter or DEFAULT_SESSION_FILTER).strip()
+    if normalized_filter not in VALID_SESSION_FILTERS:
+        valid_filters = ", ".join(sorted(VALID_SESSION_FILTERS))
+        raise ValueError(f"Unsupported session filter '{normalized_filter}'. Expected one of: {valid_filters}.")
+
+    return normalized_filter
 
 
 def _weighted_average(values: pd.Series, weights: pd.Series) -> float:
@@ -1038,6 +1058,54 @@ def build_session_quality_report(runtime_rows: pd.DataFrame, session_summary: pd
     return pd.DataFrame(quality_rows, columns=SESSION_QUALITY_COLUMNS)
 
 
+def build_session_inclusion_report(
+    session_quality: pd.DataFrame,
+    *,
+    session_filter: str = DEFAULT_SESSION_FILTER,
+) -> pd.DataFrame:
+    """Mark which session/video runs are included under one analysis filter."""
+
+    normalized_filter = _validate_session_filter(session_filter)
+    if session_quality.empty:
+        return _empty_dataframe(SESSION_INCLUSION_COLUMNS)
+
+    inclusion = session_quality.copy()
+    if normalized_filter == "all":
+        inclusion["included_by_filter"] = True
+        inclusion["exclusion_reason"] = ""
+    elif normalized_filter == "tracking_usable":
+        inclusion["included_by_filter"] = inclusion["is_usable_for_tracking_analysis"].fillna(False).astype(bool)
+        inclusion["exclusion_reason"] = inclusion["included_by_filter"].map(
+            lambda is_included: "" if is_included else "not_tracking_usable"
+        )
+    else:
+        inclusion["included_by_filter"] = inclusion["is_usable_for_aoi_analysis"].fillna(False).astype(bool)
+        inclusion["exclusion_reason"] = inclusion["included_by_filter"].map(
+            lambda is_included: "" if is_included else "not_aoi_usable"
+        )
+
+    inclusion["session_filter"] = normalized_filter
+    return inclusion[SESSION_INCLUSION_COLUMNS]
+
+
+def filter_runtime_rows_by_session_inclusion(
+    runtime_rows: pd.DataFrame,
+    session_inclusion: pd.DataFrame,
+) -> pd.DataFrame:
+    """Keep only the participant/session/video runs included by the chosen filter."""
+
+    if runtime_rows.empty or session_inclusion.empty:
+        return runtime_rows.iloc[0:0].copy()
+
+    included_sessions = session_inclusion[session_inclusion["included_by_filter"]]
+    if included_sessions.empty:
+        return runtime_rows.iloc[0:0].copy()
+
+    row_index = pd.MultiIndex.from_frame(runtime_rows[SESSION_GROUP_COLUMNS])
+    included_index = pd.MultiIndex.from_frame(included_sessions[SESSION_GROUP_COLUMNS].drop_duplicates())
+    return runtime_rows.loc[row_index.isin(included_index)].copy()
+
+
 def build_source_file_summary(runtime_rows: pd.DataFrame, session_quality: pd.DataFrame) -> pd.DataFrame:
     """Summarize runtime exports by source CSV file for quick ingestion QA."""
 
@@ -1165,24 +1233,44 @@ def analyze_runtime_exports(
     input_csvs: list[str] | None = None,
     input_dir: str | Path | None = None,
     manifest_root: str | Path | None = None,
+    session_filter: str = DEFAULT_SESSION_FILTER,
 ) -> RuntimeAnalyticsResult:
     """Run the first post-processing pass over Unity runtime CSV exports."""
 
     csv_paths = discover_runtime_csv_paths(input_csvs=input_csvs, input_dir=input_dir)
     raw_rows = load_runtime_csvs(csv_paths)
-    return analyze_runtime_rows(raw_rows, manifest_root=manifest_root)
+    return analyze_runtime_rows(
+        raw_rows,
+        manifest_root=manifest_root,
+        session_filter=session_filter,
+    )
 
 
 def analyze_runtime_rows(
     runtime_rows: pd.DataFrame,
     *,
     manifest_root: str | Path | None = None,
+    session_filter: str = DEFAULT_SESSION_FILTER,
 ) -> RuntimeAnalyticsResult:
     """Run the Phase 3 analytics stack over already loaded runtime rows."""
 
-    raw_rows = runtime_rows.copy()
+    normalized_filter = _validate_session_filter(session_filter)
+    input_rows = runtime_rows.copy()
+    input_row_count = int(len(input_rows))
+    input_session_summary = build_session_summary(input_rows)
+    input_session_quality = build_session_quality_report(input_rows, input_session_summary)
+    session_inclusion = build_session_inclusion_report(
+        input_session_quality,
+        session_filter=normalized_filter,
+    )
+
+    raw_rows = filter_runtime_rows_by_session_inclusion(input_rows, session_inclusion)
     session_summary = build_session_summary(raw_rows)
-    session_quality = build_session_quality_report(raw_rows, session_summary)
+    session_quality = (
+        session_inclusion[session_inclusion["included_by_filter"]]
+        .drop(columns=["session_filter", "included_by_filter", "exclusion_reason"])
+        .reset_index(drop=True)
+    )
     source_file_summary = build_source_file_summary(raw_rows, session_quality)
     aoi_summary = build_aoi_summary(raw_rows, session_summary)
     participant_summary = build_participant_summary(session_summary, aoi_summary)
@@ -1199,12 +1287,16 @@ def analyze_runtime_rows(
         source_file_summary=source_file_summary,
         session_summary=session_summary,
         session_quality=session_quality,
+        session_inclusion=session_inclusion,
         participant_summary=participant_summary,
         video_summary=video_summary,
         aoi_summary=aoi_summary,
         video_aoi_summary=video_aoi_summary,
         transition_summary=transition_summary,
         manifest_index=manifest_index,
+        session_filter=normalized_filter,
+        input_row_count=input_row_count,
+        input_session_count=int(len(input_session_summary)),
     )
 
 
@@ -1222,6 +1314,7 @@ def export_runtime_analytics(
     source_file_summary_path = output_directory / "runtime_source_file_summary.csv"
     session_summary_path = output_directory / "runtime_session_summary.csv"
     session_quality_path = output_directory / "runtime_session_quality.csv"
+    session_inclusion_path = output_directory / "runtime_session_inclusion.csv"
     participant_summary_path = output_directory / "runtime_participant_summary.csv"
     video_summary_path = output_directory / "runtime_video_summary.csv"
     aoi_summary_path = output_directory / "runtime_aoi_summary.csv"
@@ -1233,6 +1326,7 @@ def export_runtime_analytics(
     analytics_result.source_file_summary.to_csv(source_file_summary_path, index=False)
     analytics_result.session_summary.to_csv(session_summary_path, index=False)
     analytics_result.session_quality.to_csv(session_quality_path, index=False)
+    analytics_result.session_inclusion.to_csv(session_inclusion_path, index=False)
     analytics_result.participant_summary.to_csv(participant_summary_path, index=False)
     analytics_result.video_summary.to_csv(video_summary_path, index=False)
     analytics_result.aoi_summary.to_csv(aoi_summary_path, index=False)
@@ -1240,12 +1334,22 @@ def export_runtime_analytics(
     analytics_result.transition_summary.to_csv(transition_summary_path, index=False)
 
     snapshot = {
+        "session_filter": analytics_result.session_filter,
+        "input_row_count": analytics_result.input_row_count,
         "row_count": int(len(analytics_result.raw_rows)),
         "source_file_count": int(analytics_result.raw_rows["source_file"].dropna().astype(str).nunique()),
+        "input_session_count": analytics_result.input_session_count,
         "participant_count": int(analytics_result.raw_rows["participant_id"].dropna().astype(str).nunique()),
         "session_count": int(len(analytics_result.session_summary)),
+        "included_session_count": int(analytics_result.session_inclusion["included_by_filter"].sum())
+        if not analytics_result.session_inclusion.empty
+        else 0,
+        "excluded_session_count": int((~analytics_result.session_inclusion["included_by_filter"]).sum())
+        if not analytics_result.session_inclusion.empty
+        else 0,
         "video_count": int(analytics_result.raw_rows["video_id"].dropna().astype(str).nunique()),
         "session_quality_row_count": int(len(analytics_result.session_quality)),
+        "session_inclusion_row_count": int(len(analytics_result.session_inclusion)),
         "aoi_summary_row_count": int(len(analytics_result.aoi_summary)),
         "video_aoi_summary_row_count": int(len(analytics_result.video_aoi_summary)),
         "transition_row_count": int(len(analytics_result.transition_summary)),
@@ -1280,6 +1384,7 @@ def export_runtime_analytics(
         "source_file_summary_path": source_file_summary_path,
         "session_summary_path": session_summary_path,
         "session_quality_path": session_quality_path,
+        "session_inclusion_path": session_inclusion_path,
         "participant_summary_path": participant_summary_path,
         "video_summary_path": video_summary_path,
         "aoi_summary_path": aoi_summary_path,
