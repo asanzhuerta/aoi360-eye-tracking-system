@@ -78,7 +78,10 @@ class PreprocessGuiApp:
         self.detection_max_height_var = IntVar(value=default_detection_max_height)
         self.detection_preload_workers_var = IntVar(value=self.runtime_summary.recommended_preload_workers)
         self.yaw_offset_var = DoubleVar(value=0.0)
-        self.min_confidence_var = DoubleVar(value=0.35)
+        self.min_confidence_var = DoubleVar(value=0.40)
+        self.box_padding_var = IntVar(value=64)
+        self.frame_nms_iou_threshold_var = DoubleVar(value=0.55)
+        self.normalize_labels_to_prompt_vocab_var = BooleanVar(value=True)
         self.box_threshold_var = DoubleVar(value=0.35)
         self.text_threshold_var = DoubleVar(value=0.25)
         self.clean_var = BooleanVar(value=True)
@@ -233,14 +236,21 @@ class PreprocessGuiApp:
         self._add_spinbox(left_column, "Detection preload workers", self.detection_preload_workers_var, 12, from_=0, to=32)
         self._add_spinbox(left_column, "Yaw offset (deg)", self.yaw_offset_var, 13, from_=-360.0, to=360.0, increment=1.0)
         self._add_spinbox(left_column, "Min confidence", self.min_confidence_var, 14, from_=0.0, to=1.0, increment=0.05)
-        self._add_spinbox(left_column, "Box threshold", self.box_threshold_var, 15, from_=0.0, to=1.0, increment=0.05)
-        self._add_spinbox(left_column, "Text threshold", self.text_threshold_var, 16, from_=0.0, to=1.0, increment=0.05)
+        self._add_spinbox(left_column, "AOI box padding", self.box_padding_var, 15, from_=0, to=512, increment=8)
+        self._add_spinbox(left_column, "Frame NMS IoU", self.frame_nms_iou_threshold_var, 16, from_=0.0, to=1.0, increment=0.05)
+        ttk.Checkbutton(
+            left_column,
+            text="Normalize detector labels to prompt vocabulary",
+            variable=self.normalize_labels_to_prompt_vocab_var,
+        ).grid(row=17, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        self._add_spinbox(left_column, "Box threshold", self.box_threshold_var, 18, from_=0.0, to=1.0, increment=0.05)
+        self._add_spinbox(left_column, "Text threshold", self.text_threshold_var, 19, from_=0.0, to=1.0, increment=0.05)
 
         ttk.Checkbutton(
             left_column,
             text="Clean previously generated outputs before rebuilding",
             variable=self.clean_var,
-        ).grid(row=17, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        ).grid(row=20, column=0, columnspan=3, sticky="w", pady=(10, 0))
 
         right_column = ttk.LabelFrame(controls, text="Resolved output layout", padding=10)
         right_column.grid(row=0, column=1, sticky="nsew")
@@ -387,6 +397,9 @@ class PreprocessGuiApp:
                 detection_preload_workers=int(self.detection_preload_workers_var.get()),
                 yaw_offset_degrees=float(self.yaw_offset_var.get()),
                 min_confidence=float(self.min_confidence_var.get()),
+                box_padding=int(self.box_padding_var.get()),
+                frame_nms_iou_threshold=float(self.frame_nms_iou_threshold_var.get()),
+                normalize_labels_to_prompt_vocab=bool(self.normalize_labels_to_prompt_vocab_var.get()),
                 box_threshold=float(self.box_threshold_var.get()),
                 text_threshold=float(self.text_threshold_var.get()),
                 include_labels=include_labels or None,

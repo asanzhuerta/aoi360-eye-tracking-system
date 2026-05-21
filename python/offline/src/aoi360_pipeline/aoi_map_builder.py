@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import colorsys
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -38,6 +39,115 @@ def parse_label_filters(values: list[str] | None) -> set[str]:
     return {value.strip().lower() for value in values if value and value.strip()}
 
 
+def normalize_text_fragment(value: str) -> str:
+    normalized_value = re.sub(r"\s+", " ", str(value).replace("_", " ").strip().lower())
+    return normalized_value
+
+
+def parse_prompt_vocabulary(prompt: str) -> list[str]:
+    prompt_segments = re.split(r"[.;\n\r]+", str(prompt))
+    vocabulary: list[str] = []
+    for segment in prompt_segments:
+        normalized_segment = normalize_text_fragment(segment)
+        if normalized_segment:
+            vocabulary.append(normalized_segment)
+    return vocabulary
+
+
+def tokenize_label(value: str) -> set[str]:
+    return {token for token in normalize_text_fragment(value).split(" ") if token}
+
+
+def canonicalize_label_to_prompt(label: str, prompt: str) -> str:
+    normalized_label = normalize_text_fragment(label)
+    prompt_vocabulary = parse_prompt_vocabulary(prompt)
+    if not normalized_label or not prompt_vocabulary:
+        return normalized_label
+
+    if normalized_label in prompt_vocabulary:
+        return normalized_label
+
+    label_tokens = tokenize_label(normalized_label)
+    if not label_tokens:
+        return normalized_label
+
+    best_candidate = normalized_label
+    best_score: tuple[int, float, int, int, int] | None = None
+
+    for prompt_index, candidate in enumerate(prompt_vocabulary):
+        candidate_tokens = tokenize_label(candidate)
+        token_overlap = len(label_tokens.intersection(candidate_tokens))
+        if token_overlap <= 0:
+            continue
+
+        overlap_ratio = token_overlap / max(len(label_tokens), len(candidate_tokens))
+        contains_score = 1 if candidate in normalized_label or normalized_label in candidate else 0
+        score = (
+            contains_score,
+            overlap_ratio,
+            token_overlap,
+            len(candidate_tokens),
+            -prompt_index,
+        )
+        if best_score is None or score > best_score:
+            best_candidate = candidate
+            best_score = score
+
+    return best_candidate
+
+
+def _bbox_iou_from_series(box_a: pd.Series, box_b: pd.Series) -> float:
+    inter_x_min = max(float(box_a["x_min"]), float(box_b["x_min"]))
+    inter_y_min = max(float(box_a["y_min"]), float(box_b["y_min"]))
+    inter_x_max = min(float(box_a["x_max"]), float(box_b["x_max"]))
+    inter_y_max = min(float(box_a["y_max"]), float(box_b["y_max"]))
+
+    inter_width = max(0.0, inter_x_max - inter_x_min)
+    inter_height = max(0.0, inter_y_max - inter_y_min)
+    intersection = inter_width * inter_height
+
+    area_a = max(0.0, float(box_a["x_max"]) - float(box_a["x_min"])) * max(
+        0.0, float(box_a["y_max"]) - float(box_a["y_min"])
+    )
+    area_b = max(0.0, float(box_b["x_max"]) - float(box_b["x_min"])) * max(
+        0.0, float(box_b["y_max"]) - float(box_b["y_min"])
+    )
+    union = area_a + area_b - intersection
+
+    if union <= 0.0:
+        return 0.0
+
+    return intersection / union
+
+
+def apply_per_frame_label_nms(detections: pd.DataFrame, iou_threshold: float) -> pd.DataFrame:
+    if detections.empty:
+        return detections
+
+    if not 0.0 <= iou_threshold <= 1.0:
+        raise ValueError("frame_nms_iou_threshold must be between 0.0 and 1.0")
+
+    kept_row_indexes: list[int] = []
+    grouped = detections.groupby(["frame_index", "frame_file", "label"], sort=False)
+    for _group_key, frame_group in grouped:
+        ordered_group = frame_group.sort_values(["confidence", "detection_index"], ascending=[False, True])
+        kept_rows: list[pd.Series] = []
+        for row_index, row in ordered_group.iterrows():
+            should_keep = True
+            for kept_row in kept_rows:
+                if _bbox_iou_from_series(row, kept_row) >= iou_threshold:
+                    should_keep = False
+                    break
+            if should_keep:
+                kept_rows.append(row)
+                kept_row_indexes.append(int(row_index))
+
+    if not kept_row_indexes:
+        return detections.iloc[0:0].copy()
+
+    return detections.loc[sorted(kept_row_indexes)].copy()
+
+
 def build_aoi_entries_from_detections(
     detections: pd.DataFrame,
     width: int,
@@ -51,8 +161,17 @@ def build_aoi_entries_from_detections(
     source_height = int(source_height or height)
     scale_x = width / max(1, source_width)
     scale_y = height / max(1, source_height)
+    ordered_detections = detections.copy()
+    ordered_detections["_bbox_area"] = (
+        (ordered_detections["x_max"].astype(float) - ordered_detections["x_min"].astype(float)).clip(lower=0.0) *
+        (ordered_detections["y_max"].astype(float) - ordered_detections["y_min"].astype(float)).clip(lower=0.0)
+    )
+    ordered_detections = ordered_detections.sort_values(
+        ["_bbox_area", "confidence", "detection_index"],
+        ascending=[False, True, True],
+    )
 
-    for local_aoi_id, row in enumerate(detections.itertuples(index=False), start=1):
+    for local_aoi_id, row in enumerate(ordered_detections.itertuples(index=False), start=1):
         row_label = getattr(row, "label", getattr(row, "aoi_category", "aoi"))
         row_prompt = getattr(row, "aoi_prompt", getattr(row, "prompt", row_label))
         assigned_aoi_id = int(getattr(row, "aoi_id", local_aoi_id))
@@ -92,6 +211,8 @@ def load_and_filter_detections(
     detections_csv: str | Path,
     include_labels: list[str] | None = None,
     min_confidence: float = 0.35,
+    frame_nms_iou_threshold: float | None = None,
+    normalize_labels_to_prompt_vocab: bool = False,
 ) -> pd.DataFrame:
     detections_csv = Path(detections_csv)
     if not detections_csv.exists():
@@ -107,13 +228,27 @@ def load_and_filter_detections(
             "Detections CSV is missing required columns: " + ", ".join(missing_columns)
         )
 
+    if normalize_labels_to_prompt_vocab:
+        detections = detections.copy()
+        detections["label"] = [
+            canonicalize_label_to_prompt(label=row_label, prompt=row_prompt)
+            for row_label, row_prompt in zip(detections["label"], detections["prompt"])
+        ]
+
     label_filters = parse_label_filters(include_labels)
     if label_filters:
-        detections = detections[detections["label"].astype(str).str.lower().isin(label_filters)]
+        detections = detections[
+            detections["label"].astype(str).map(normalize_text_fragment).isin(label_filters)
+        ]
 
     detections = detections[detections["confidence"] >= float(min_confidence)].copy()
     if detections.empty:
         raise RuntimeError("No detections survived the current filters.")
+
+    if frame_nms_iou_threshold is not None:
+        detections = apply_per_frame_label_nms(detections, frame_nms_iou_threshold)
+        if detections.empty:
+            raise RuntimeError("No detections survived the per-frame label NMS pass.")
 
     return detections
 
