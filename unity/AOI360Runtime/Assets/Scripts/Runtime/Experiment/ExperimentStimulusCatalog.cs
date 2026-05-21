@@ -10,16 +10,34 @@ namespace AOI360.Runtime.Experiment
         private const string ManifestSuffix = "_aoi_sequence_manifest.json";
         private static readonly string[] PreferredVideoExtensions = { ".mp4", ".mov", ".webm", ".mkv" };
 
-        public static List<ExperimentStimulusDefinition> DiscoverAvailableStimuli()
+        public static List<ExperimentStimulusDefinition> DiscoverAvailableStimuli(
+            bool includeStreamingAssetsMirror = true
+        )
         {
             Dictionary<string, ExperimentStimulusDefinition> stimuliByKey =
                 new Dictionary<string, ExperimentStimulusDefinition>(StringComparer.OrdinalIgnoreCase);
 
             AddRepositoryStimuli(stimuliByKey);
-            AddStreamingAssetStimuli(stimuliByKey);
+            if (includeStreamingAssetsMirror)
+            {
+                AddStreamingAssetStimuli(stimuliByKey);
+            }
 
             List<ExperimentStimulusDefinition> stimuli =
                 new List<ExperimentStimulusDefinition>(stimuliByKey.Values);
+
+            ExperimentStimulusAllowlist stimulusAllowlist =
+                ExperimentRuntimeConfig.LoadStimulusAllowlist();
+
+            if (stimulusAllowlist.FiltersStimuli)
+            {
+                int discoveredCount = stimuli.Count;
+                stimuli = stimuli.FindAll(stimulusAllowlist.Allows);
+                Debug.Log(
+                    $"[ExperimentStimulusCatalog] Allowlist activa desde '{stimulusAllowlist.ConfigPath}'. " +
+                    $"Videos visibles: {stimuli.Count}/{discoveredCount}."
+                );
+            }
 
             stimuli.Sort(delegate (ExperimentStimulusDefinition left, ExperimentStimulusDefinition right)
             {

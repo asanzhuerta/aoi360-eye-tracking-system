@@ -12,6 +12,9 @@ namespace AOI360.Runtime.Experiment
         public static bool HasSelectedStimulus => SelectedStimulus != null;
         public static bool IsPlaybackStartLocked { get; private set; }
         public static float CountdownSeconds { get; private set; } = 5f;
+        public static float VideoVolume { get; private set; } = 1f;
+        public static bool CountdownBeepEnabled { get; private set; } = true;
+        public static float CountdownBeepVolume { get; private set; } = 0.75f;
         public static int CurrentParticipantNumber { get; private set; }
         public static int CurrentSessionNumber { get; private set; }
         public static string CurrentParticipantId
@@ -41,6 +44,9 @@ namespace AOI360.Runtime.Experiment
             SelectedStimulus = null;
             IsPlaybackStartLocked = false;
             CountdownSeconds = 5f;
+            VideoVolume = 1f;
+            CountdownBeepEnabled = true;
+            CountdownBeepVolume = 0.75f;
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -52,12 +58,18 @@ namespace AOI360.Runtime.Experiment
         public static void SetSelectedStimulus(
             ExperimentStimulusDefinition stimulus,
             bool lockPlaybackStart = true,
-            float countdownSeconds = 5f
+            float countdownSeconds = 5f,
+            float videoVolume = 1f,
+            bool countdownBeepEnabled = true,
+            float countdownBeepVolume = 0.75f
         )
         {
             SelectedStimulus = stimulus;
             IsPlaybackStartLocked = lockPlaybackStart;
             CountdownSeconds = Mathf.Max(0f, countdownSeconds);
+            VideoVolume = Mathf.Clamp01(videoVolume);
+            CountdownBeepEnabled = countdownBeepEnabled;
+            CountdownBeepVolume = Mathf.Clamp01(countdownBeepVolume);
         }
 
         public static void UnlockPlaybackStart()
@@ -75,6 +87,9 @@ namespace AOI360.Runtime.Experiment
             SelectedStimulus = null;
             IsPlaybackStartLocked = false;
             CountdownSeconds = 5f;
+            VideoVolume = 1f;
+            CountdownBeepEnabled = true;
+            CountdownBeepVolume = 0.75f;
         }
 
         public static string ReserveNextSessionId()

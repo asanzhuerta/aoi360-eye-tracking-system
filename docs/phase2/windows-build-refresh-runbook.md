@@ -40,9 +40,9 @@ Example:
 data/input_videos/new_stimulus.mp4
 ```
 
-If the new video needs its own prompt preset for the preprocessing GUI or detector benchmark flow, update:
+If the new video needs its own prompt preset for the preprocessing GUI or detector benchmark flow, update one of the prompt preset mappings under:
 
-- `data/promts/5videosPromt.json`
+- `data/promts/`
 
 ## Step 2: Rebuild the processed AOI assets
 
@@ -94,6 +94,12 @@ Keeping the player under the repo tree lets the runtime keep reading:
 - `data/input_videos/`
 - `data/processed/`
 - `data/exports/csv/`
+
+If you want the build to show only a selected subset of processed videos in `Initial_Scene`, edit:
+
+- `data/experiment/runtime_config.json`
+
+This allowlist filters the visible stimuli without deleting any source videos or generated AOI assets.
 
 If the build is moved elsewhere, define `AOI360_REPOSITORY_ROOT` before launching it or pass `--aoi360-repo-root=<absolute_repo_path>`.
 

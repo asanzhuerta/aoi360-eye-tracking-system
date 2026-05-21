@@ -12,6 +12,8 @@ namespace AOI360.Editor
         private const string WindowsFolderName = "windows";
         private const string PlayerFolderName = "AOI360Runtime";
         private const string ExecutableName = "AOI360Runtime.exe";
+        private static readonly string RuntimeConfigRelativePath =
+            Path.Combine("data", "experiment", "runtime_config.json");
 
         [MenuItem("Tools/AOI/Build Windows x64 Player")]
         public static void BuildWindowsX64Player()
@@ -48,9 +50,11 @@ namespace AOI360.Editor
             BuildReport report = BuildPipeline.BuildPlayer(buildOptions);
             if (report.summary.result == BuildResult.Succeeded)
             {
+                string runtimeConfigPath = Path.Combine(repositoryRoot, RuntimeConfigRelativePath);
                 Debug.Log(
                     $"[BuildWindowsPlayer] Build de Windows generado en: {executablePath}\n" +
-                    "[BuildWindowsPlayer] Al quedar dentro del repo, el runtime podra seguir leyendo data/ y exportando CSV en data/exports/csv."
+                    "[BuildWindowsPlayer] Al quedar dentro del repo, el runtime podra seguir leyendo data/ y exportando CSV en data/exports/csv.\n" +
+                    $"[BuildWindowsPlayer] La visibilidad de videos en Initial_Scene se controla desde: {runtimeConfigPath}"
                 );
                 return;
             }
