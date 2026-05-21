@@ -119,7 +119,7 @@ The GUI lets you:
 - follow stage progress and useful logs in real time
 - see whether the pipeline is running on `cpu` or `cuda`
 - see the resolved output folders before running anything
-- auto-fill the prompt when the selected video stem matches an entry in `data/promts/5videosPromt.json`
+- auto-fill the prompt when the selected video stem matches an entry in the prompt preset JSONs under `data/promts/`, including `3videosPromt.json` for the pilot corpus
 
 If you want a root-level launcher instead of calling Python manually, use:
 
@@ -207,11 +207,12 @@ That per-frame layout is now consumed by the current Unity runtime loader keyed 
 
 ## Prompt presets
 
-The repository now keeps a simple per-video prompt mapping file in:
+The repository now keeps simple per-video prompt mapping files in:
 
+- `data/promts/3videosPromt.json`
 - `data/promts/5videosPromt.json`
 
 This mapping is used in two places:
 
 - the benchmark script through `--video-prompt` / `--video-prompt-file`
-- the preprocessing GUI, which auto-loads the matching prompt when the selected video stem is present in that JSON
+- the preprocessing GUI, which auto-loads the matching prompt when the selected video stem is present in those JSON files

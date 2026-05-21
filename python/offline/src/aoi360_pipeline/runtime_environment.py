@@ -79,10 +79,19 @@ def inspect_torch_runtime(torch_module=None) -> TorchRuntimeSummary:
 
     if total_memory_gb >= 10.0:
         recommended_batch_size = 8
+        recommended_preload_workers = 4
     elif total_memory_gb >= 6.0:
         recommended_batch_size = 6
+        recommended_preload_workers = 4
+    elif total_memory_gb >= 4.5:
+        # 4-5 GB laptop GPUs tend to OOM with Grounding DINO when using the
+        # old automatic batch size of 4, especially on 1920x960 inference
+        # inputs. Keep the default conservative so the GUI works out of the box.
+        recommended_batch_size = 2
+        recommended_preload_workers = 2
     else:
-        recommended_batch_size = 4
+        recommended_batch_size = 1
+        recommended_preload_workers = 1
 
     return TorchRuntimeSummary(
         torch_version=torch_version,
@@ -94,5 +103,5 @@ def inspect_torch_runtime(torch_module=None) -> TorchRuntimeSummary:
         default_device="cuda",
         recommended_precision="fp16",
         recommended_batch_size=recommended_batch_size,
-        recommended_preload_workers=4,
+        recommended_preload_workers=recommended_preload_workers,
     )
