@@ -55,6 +55,7 @@ namespace AOI360.Runtime.Logging
             hasExportedCurrentRows = false;
             LastExportPath = string.Empty;
             ResolveReferences();
+            ApplyRuntimeIdentifiersPreview();
 
             if (recordOnStart)
             {
@@ -149,7 +150,13 @@ namespace AOI360.Runtime.Logging
 
         public void StartRecording()
         {
+            if (isRecording)
+            {
+                return;
+            }
+
             ResolveReferences();
+            RefreshIdentifiersForRecordingStart();
             sessionStartTime = Time.time;
             isRecording = true;
             lastExportedFixationSequence = 0;
@@ -158,7 +165,10 @@ namespace AOI360.Runtime.Logging
 
             if (logRecordingState)
             {
-                Debug.Log("[DataRecorder] Recording started.");
+                Debug.Log(
+                    $"[DataRecorder] Recording started. participantId={participantId} | " +
+                    $"sessionId={sessionId} | videoId={videoId}"
+                );
             }
         }
 
@@ -189,7 +199,7 @@ namespace AOI360.Runtime.Logging
                 return;
             }
 
-            // Prefer the repository export folder so Unity runtime logs land
+            // Prefer the repository raw-CSV folder so Unity runtime logs land
             // next to the Python pipeline artefacts and analytics can consume
             // them without a manual copy step. Packaged builds still fall back
             // to persistentDataPath when the repo root cannot be resolved.
@@ -215,12 +225,13 @@ namespace AOI360.Runtime.Logging
                 return Path.Combine(repositoryRoot, "data", "exports", "csv");
             }
 
-            return Path.Combine(Application.persistentDataPath, "Exports");
+            return Path.Combine(Application.persistentDataPath, "Exports", "csv");
         }
 
         private void TryStartRecording()
         {
             ResolveReferences();
+            ApplyRuntimeIdentifiersPreview();
 
             if (isRecording)
             {
@@ -301,12 +312,41 @@ namespace AOI360.Runtime.Logging
 
         private string ResolveVideoId()
         {
-            if (videoPlayback != null && !string.IsNullOrWhiteSpace(videoPlayback.VideoStem))
+            // Keep the runtime CSV aligned with the offline manifests by exporting
+            // the video base name without the container extension.
+            if (ExperimentSessionState.HasSelectedStimulus && !string.IsNullOrWhiteSpace(ExperimentSessionState.SelectedStimulus.VideoId))
             {
-                return videoPlayback.VideoStem;
+                return ExperimentSessionState.SelectedStimulus.VideoId;
             }
 
-            return videoId;
+            if (videoPlayback != null)
+            {
+                if (!string.IsNullOrWhiteSpace(videoPlayback.ActiveVideoPath))
+                {
+                    return Path.GetFileNameWithoutExtension(videoPlayback.ActiveVideoPath);
+                }
+
+                if (!string.IsNullOrWhiteSpace(videoPlayback.VideoFileName))
+                {
+                    return Path.GetFileNameWithoutExtension(videoPlayback.VideoFileName);
+                }
+            }
+
+            return Path.GetFileNameWithoutExtension(videoId);
+        }
+
+        private void ApplyRuntimeIdentifiersPreview()
+        {
+            participantId = ExperimentSessionState.CurrentParticipantId;
+            sessionId = ExperimentSessionState.PeekNextSessionId();
+            videoId = ResolveVideoId();
+        }
+
+        private void RefreshIdentifiersForRecordingStart()
+        {
+            participantId = ExperimentSessionState.CurrentParticipantId;
+            sessionId = ExperimentSessionState.ReserveNextSessionId();
+            videoId = ResolveVideoId();
         }
 
         private string Escape(string value)

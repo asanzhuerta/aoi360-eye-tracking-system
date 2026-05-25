@@ -203,13 +203,15 @@ The analytics package now includes a first post-processing pass for the fixation
 It can:
 
 - load one or more runtime CSVs
+- read runtime CSVs from `data/exports/csv/` by default while keeping analytics outputs under `data/exports/analytics/`
 - normalize and validate the export schema
 - estimate the effective fixation cadence per session
 - summarize session quality and valid-tracking coverage
-- compute AOI-level dwell time, first-fixation timing, and visit counts
-- aggregate session quality by participant and by video
+- compute AOI-level dwell time, first-fixation timing, visit counts, and normalized time-share metrics
+- aggregate session quality by participant, by video, and by `video x AOI`
 - estimate AOI-to-AOI transition counts from the ordered fixation timeline
 - enrich AOI ids with names/categories from the exported manifests when available
+- reapply two different AOI-manifest roots over the same runtime CSVs so manual and automatic AOIs can be compared without repeating the Unity session
 
 Reference commands and outputs live in:
 

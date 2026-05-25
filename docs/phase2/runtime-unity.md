@@ -14,6 +14,7 @@ The intended headset flow is:
 
 1. `Initial_Scene` shows the runtime-generated stimulus list.
    - the selection canvas stays fixed in the scene instead of following the current head direction
+   - when `data/experiment/runtime_config.json` enables the stimulus allowlist, only the listed videos appear in the menu
 2. Selecting a stimulus stores the experiment session state and loads `Phase2_360Playback_VR_sampleRIG`.
 3. As soon as the experiment scene loads, the runtime must:
    - start a `5 -> 0` countdown overlay

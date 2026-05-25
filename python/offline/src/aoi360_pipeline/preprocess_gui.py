@@ -27,7 +27,10 @@ class PreprocessGuiApp:
     """Thin presentation layer over the rebuild pipeline."""
 
     DEFAULT_PROMPT = "person. face. bottle. screen. product."
-    PROMPT_PRESET_PATH = Path("data") / "promts" / "5videosPromt.json"
+    PROMPT_PRESET_PATHS = (
+        Path("data") / "promts" / "5videosPromt.json",
+        Path("data") / "promts" / "3videosPromt.json",
+    )
     STAGE_ORDER = ("extract", "detect", "build")
     STAGE_WEIGHTS = {
         "extract": 0.2,
@@ -54,6 +57,13 @@ class PreprocessGuiApp:
         self.root.minsize(980, 700)
 
         default_video_path = self.repo_root / "data" / "input_videos" / "video_360.mp4"
+        is_low_vram_cuda = (
+            self.runtime_summary.cuda_available and
+            self.runtime_summary.total_memory_gb is not None and
+            self.runtime_summary.total_memory_gb <= 4.5
+        )
+        default_detection_max_width = 1280 if is_low_vram_cuda else 1920
+        default_detection_max_height = 640 if is_low_vram_cuda else 960
         self.video_path_var = StringVar(value=str(default_video_path))
         self.text_prompt_var = StringVar(value=self.DEFAULT_PROMPT)
         self.detector_var = StringVar(value=DEFAULT_DETECTOR)
@@ -64,11 +74,14 @@ class PreprocessGuiApp:
         self.output_width_var = IntVar(value=1024)
         self.output_height_var = IntVar(value=512)
         self.detection_batch_size_var = IntVar(value=self.runtime_summary.recommended_batch_size)
-        self.detection_max_width_var = IntVar(value=1920)
-        self.detection_max_height_var = IntVar(value=960)
+        self.detection_max_width_var = IntVar(value=default_detection_max_width)
+        self.detection_max_height_var = IntVar(value=default_detection_max_height)
         self.detection_preload_workers_var = IntVar(value=self.runtime_summary.recommended_preload_workers)
         self.yaw_offset_var = DoubleVar(value=0.0)
-        self.min_confidence_var = DoubleVar(value=0.35)
+        self.min_confidence_var = DoubleVar(value=0.40)
+        self.box_padding_var = IntVar(value=64)
+        self.frame_nms_iou_threshold_var = DoubleVar(value=0.55)
+        self.normalize_labels_to_prompt_vocab_var = BooleanVar(value=True)
         self.box_threshold_var = DoubleVar(value=0.35)
         self.text_threshold_var = DoubleVar(value=0.25)
         self.clean_var = BooleanVar(value=True)
@@ -97,29 +110,31 @@ class PreprocessGuiApp:
         self.root.after(self.POLL_INTERVAL_MS, self._process_worker_events)
 
     def _load_prompt_presets(self) -> dict[str, str]:
-        prompt_file = self.repo_root / self.PROMPT_PRESET_PATH
-        if not prompt_file.exists():
-            return {}
-
-        try:
-            loaded_mapping = json.loads(prompt_file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return {}
-
-        if not isinstance(loaded_mapping, dict):
-            return {}
-
         resolved_mapping: dict[str, str] = {}
-        for video_stem, prompt in loaded_mapping.items():
-            if not isinstance(video_stem, str) or not isinstance(prompt, str):
+
+        for relative_prompt_path in self.PROMPT_PRESET_PATHS:
+            prompt_file = self.repo_root / relative_prompt_path
+            if not prompt_file.exists():
                 continue
 
-            normalized_stem = video_stem.strip().lower()
-            normalized_prompt = prompt.strip()
-            if not normalized_stem or not normalized_prompt:
+            try:
+                loaded_mapping = json.loads(prompt_file.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
                 continue
 
-            resolved_mapping[normalized_stem] = normalized_prompt
+            if not isinstance(loaded_mapping, dict):
+                continue
+
+            for video_stem, prompt in loaded_mapping.items():
+                if not isinstance(video_stem, str) or not isinstance(prompt, str):
+                    continue
+
+                normalized_stem = video_stem.strip().lower()
+                normalized_prompt = prompt.strip()
+                if not normalized_stem or not normalized_prompt:
+                    continue
+
+                resolved_mapping[normalized_stem] = normalized_prompt
 
         return resolved_mapping
 
@@ -221,14 +236,21 @@ class PreprocessGuiApp:
         self._add_spinbox(left_column, "Detection preload workers", self.detection_preload_workers_var, 12, from_=0, to=32)
         self._add_spinbox(left_column, "Yaw offset (deg)", self.yaw_offset_var, 13, from_=-360.0, to=360.0, increment=1.0)
         self._add_spinbox(left_column, "Min confidence", self.min_confidence_var, 14, from_=0.0, to=1.0, increment=0.05)
-        self._add_spinbox(left_column, "Box threshold", self.box_threshold_var, 15, from_=0.0, to=1.0, increment=0.05)
-        self._add_spinbox(left_column, "Text threshold", self.text_threshold_var, 16, from_=0.0, to=1.0, increment=0.05)
+        self._add_spinbox(left_column, "AOI box padding", self.box_padding_var, 15, from_=0, to=512, increment=8)
+        self._add_spinbox(left_column, "Frame NMS IoU", self.frame_nms_iou_threshold_var, 16, from_=0.0, to=1.0, increment=0.05)
+        ttk.Checkbutton(
+            left_column,
+            text="Normalize detector labels to prompt vocabulary",
+            variable=self.normalize_labels_to_prompt_vocab_var,
+        ).grid(row=17, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        self._add_spinbox(left_column, "Box threshold", self.box_threshold_var, 18, from_=0.0, to=1.0, increment=0.05)
+        self._add_spinbox(left_column, "Text threshold", self.text_threshold_var, 19, from_=0.0, to=1.0, increment=0.05)
 
         ttk.Checkbutton(
             left_column,
             text="Clean previously generated outputs before rebuilding",
             variable=self.clean_var,
-        ).grid(row=17, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        ).grid(row=20, column=0, columnspan=3, sticky="w", pady=(10, 0))
 
         right_column = ttk.LabelFrame(controls, text="Resolved output layout", padding=10)
         right_column.grid(row=0, column=1, sticky="nsew")
@@ -375,6 +397,9 @@ class PreprocessGuiApp:
                 detection_preload_workers=int(self.detection_preload_workers_var.get()),
                 yaw_offset_degrees=float(self.yaw_offset_var.get()),
                 min_confidence=float(self.min_confidence_var.get()),
+                box_padding=int(self.box_padding_var.get()),
+                frame_nms_iou_threshold=float(self.frame_nms_iou_threshold_var.get()),
+                normalize_labels_to_prompt_vocab=bool(self.normalize_labels_to_prompt_vocab_var.get()),
                 box_threshold=float(self.box_threshold_var.get()),
                 text_threshold=float(self.text_threshold_var.get()),
                 include_labels=include_labels or None,

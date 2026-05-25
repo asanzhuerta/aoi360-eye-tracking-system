@@ -25,6 +25,9 @@ namespace AOI360.Runtime.Experiment
         private const float OverlayDynamicPixelsPerUnit = 96f;
         private const float OverlayReferencePixelsPerUnit = 100f;
         private const float ReturnToSelectionDelaySeconds = 5f;
+        private const float CountdownBeepDurationSeconds = 0.12f;
+        private const float CountdownBeepFrequencyHz = 880f;
+        private const int CountdownBeepSampleRate = 44100;
         private const string EndExperimentMessage = "Experimento finalizado";
         private const string SelectionSceneName = "Initial_Scene";
 
@@ -49,9 +52,12 @@ namespace AOI360.Runtime.Experiment
         private TextMeshProUGUI titleText;
         private TextMeshProUGUI countdownText;
         private TextMeshProUGUI subtitleText;
+        private AudioSource countdownBeepAudioSource;
+        private AudioClip countdownBeepClip;
         private InputAction endExperimentAction;
         private bool hasExperimentFinished;
         private Coroutine returnToSelectionCoroutine;
+        private int lastCountdownBeepSecond = int.MinValue;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void RegisterSceneHook()
@@ -138,6 +144,7 @@ namespace AOI360.Runtime.Experiment
 
             ResolveReferences();
             BuildOverlay();
+            PrepareCountdownBeepAudio();
 
             ExperimentStimulusDefinition stimulus = ExperimentSessionState.SelectedStimulus;
             float countdownDuration = Mathf.Max(0f, ExperimentSessionState.CountdownSeconds);
@@ -168,6 +175,7 @@ namespace AOI360.Runtime.Experiment
                 if (!countdownFinished)
                 {
                     int visibleSeconds = Mathf.Max(1, Mathf.CeilToInt(countdownEndTime - Time.unscaledTime));
+                    TryPlayCountdownBeep(visibleSeconds);
                     SetOverlayState(
                         title: "El experimento comienza en",
                         countdown: visibleSeconds.ToString(),
@@ -257,6 +265,12 @@ namespace AOI360.Runtime.Experiment
                 endExperimentAction.Dispose();
                 endExperimentAction = null;
             }
+
+            if (countdownBeepClip != null)
+            {
+                Destroy(countdownBeepClip);
+                countdownBeepClip = null;
+            }
         }
 
         private void ResolveReferences()
@@ -290,6 +304,84 @@ namespace AOI360.Runtime.Experiment
             {
                 dataRecorder = FindFirstObjectByType<DataRecorder>();
             }
+        }
+
+        private void PrepareCountdownBeepAudio()
+        {
+            if (countdownBeepAudioSource == null)
+            {
+                countdownBeepAudioSource = GetComponent<AudioSource>();
+            }
+
+            if (countdownBeepAudioSource == null)
+            {
+                countdownBeepAudioSource = gameObject.AddComponent<AudioSource>();
+            }
+
+            countdownBeepAudioSource.playOnAwake = false;
+            countdownBeepAudioSource.loop = false;
+            countdownBeepAudioSource.spatialBlend = 0f;
+            countdownBeepAudioSource.ignoreListenerPause = true;
+            countdownBeepAudioSource.volume = ExperimentSessionState.CountdownBeepVolume;
+
+            if (countdownBeepClip == null)
+            {
+                countdownBeepClip = BuildCountdownBeepClip();
+            }
+        }
+
+        private void TryPlayCountdownBeep(int visibleSeconds)
+        {
+            if (!ExperimentSessionState.CountdownBeepEnabled ||
+                ExperimentSessionState.CountdownBeepVolume <= 0f ||
+                visibleSeconds <= 0 ||
+                visibleSeconds == lastCountdownBeepSecond)
+            {
+                return;
+            }
+
+            PrepareCountdownBeepAudio();
+            if (countdownBeepAudioSource == null || countdownBeepClip == null)
+            {
+                return;
+            }
+
+            countdownBeepAudioSource.volume = ExperimentSessionState.CountdownBeepVolume;
+            countdownBeepAudioSource.PlayOneShot(
+                countdownBeepClip,
+                ExperimentSessionState.CountdownBeepVolume
+            );
+            lastCountdownBeepSecond = visibleSeconds;
+        }
+
+        private static AudioClip BuildCountdownBeepClip()
+        {
+            int sampleCount = Mathf.Max(
+                1,
+                Mathf.RoundToInt(CountdownBeepDurationSeconds * CountdownBeepSampleRate)
+            );
+            float[] samples = new float[sampleCount];
+            int edgeSampleCount = Mathf.Max(1, sampleCount / 12);
+
+            for (int sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++)
+            {
+                float time = sampleIndex / (float)CountdownBeepSampleRate;
+                float wave = Mathf.Sin(2f * Mathf.PI * CountdownBeepFrequencyHz * time);
+                float attack = Mathf.Clamp01(sampleIndex / (float)edgeSampleCount);
+                float release = Mathf.Clamp01((sampleCount - sampleIndex) / (float)edgeSampleCount);
+                float envelope = Mathf.Min(attack, release);
+                samples[sampleIndex] = wave * envelope * 0.25f;
+            }
+
+            AudioClip clip = AudioClip.Create(
+                "AOI360_CountdownBeep",
+                sampleCount,
+                1,
+                CountdownBeepSampleRate,
+                false
+            );
+            clip.SetData(samples, 0);
+            return clip;
         }
 
         private void BuildOverlay()

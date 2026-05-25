@@ -98,7 +98,7 @@ Expected result:
 - no duplicate exports from the same session
 - the CSV includes `aoi_id`, `aoi_confidence`, `timestamp_ms`, and `is_valid`
 
-If the runtime cannot resolve the repository root, the fallback location is `Application.persistentDataPath/Exports`.
+If the runtime cannot resolve the repository root, the fallback location is `Application.persistentDataPath/Exports/csv`.
 
 ## CSV spot-check
 

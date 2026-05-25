@@ -150,7 +150,10 @@ def rebuild_runtime_assets(
     detection_max_height: int | None = 960,
     detection_preload_workers: int = 0,
     detection_precision: str = "auto",
-    min_confidence: float = 0.35,
+    min_confidence: float = 0.40,
+    box_padding: int = 64,
+    frame_nms_iou_threshold: float | None = 0.55,
+    normalize_labels_to_prompt_vocab: bool = True,
     box_threshold: float = 0.35,
     text_threshold: float = 0.25,
     include_labels: list[str] | None = None,
@@ -221,6 +224,16 @@ def rebuild_runtime_assets(
             f"precision={detection_precision}."
         ),
     )
+    _emit_log(
+        log_callback,
+        (
+            "[rebuild_runtime_assets] AOI build settings: "
+            f"min_confidence={min_confidence}, "
+            f"box_padding={box_padding}, "
+            f"frame_nms_iou_threshold={frame_nms_iou_threshold}, "
+            f"normalize_labels_to_prompt_vocab={normalize_labels_to_prompt_vocab}."
+        ),
+    )
     if frame_step > every_n_frames:
         _emit_log(
             log_callback,
@@ -274,6 +287,9 @@ def rebuild_runtime_assets(
         fps=fps,
         include_labels=include_labels,
         min_confidence=min_confidence,
+        box_padding=box_padding,
+        frame_nms_iou_threshold=frame_nms_iou_threshold,
+        normalize_labels_to_prompt_vocab=normalize_labels_to_prompt_vocab,
         frame_step=frame_step,
         output_width=output_width,
         output_height=output_height,
@@ -400,7 +416,24 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Bake this horizontal equirectangular yaw offset into every exported AOI map. Defaults to 0 degrees.",
     )
-    parser.add_argument("--min-confidence", type=float, default=0.35)
+    parser.add_argument("--min-confidence", type=float, default=0.40)
+    parser.add_argument(
+        "--box-padding",
+        type=int,
+        default=64,
+        help="Extra padding, in source-frame pixels, applied around each AOI box before rasterising the runtime map.",
+    )
+    parser.add_argument(
+        "--frame-nms-iou-threshold",
+        type=float,
+        default=0.55,
+        help="Per-frame, per-label NMS IoU threshold used to suppress duplicate detections before AOI tracking.",
+    )
+    parser.add_argument(
+        "--disable-label-normalization",
+        action="store_true",
+        help="Keep raw detector labels instead of canonicalising them against the prompt vocabulary.",
+    )
     parser.add_argument("--box-threshold", type=float, default=0.35)
     parser.add_argument("--text-threshold", type=float, default=0.25)
     parser.add_argument("--include-label", action="append", dest="include_labels")
@@ -432,6 +465,9 @@ def main() -> None:
         detection_preload_workers=args.detection_preload_workers,
         detection_precision=args.detection_precision,
         min_confidence=args.min_confidence,
+        box_padding=args.box_padding,
+        frame_nms_iou_threshold=args.frame_nms_iou_threshold,
+        normalize_labels_to_prompt_vocab=not args.disable_label_normalization,
         box_threshold=args.box_threshold,
         text_threshold=args.text_threshold,
         include_labels=args.include_labels,

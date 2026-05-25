@@ -1,0 +1,8 @@
+{
+  "stimulusAllowlistEnabled": true,
+  "allowedVideoIds": [
+    "test1Camera360",
+    "test2Camera360",
+    "test3Lions360"
+  ]
+}
