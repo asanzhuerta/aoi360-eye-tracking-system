@@ -1,0 +1,186 @@
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-nodecimaldot]{babel}
+\usepackage[a4paper,margin=2.2cm]{geometry}
+\usepackage{lmodern}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{setspace}
+\usepackage{titlesec}
+
+\setlength{\parskip}{0.25em}
+\setlength{\parindent}{0pt}
+\setstretch{1.12}
+\setlist[itemize]{leftmargin=1.35em,itemsep=0.12em,topsep=0.2em,parsep=0pt,partopsep=0pt}
+\titlespacing*{\section}{0pt}{0.65em}{0.2em}
+
+\newcommand{\StudyTitle}{Seguimiento ocular en videos $360^\circ$ en realidad virtual}
+
+\newcommand{\HeaderBlock}{
+\textbf{Proyecto:} Offline Dynamic AOI Generation and Runtime Gaze Mapping for 360 Video in Virtual Reality: A Systems and Feasibility Study
+
+\textbf{Institucion responsable:} Universidad de C\'adiz
+
+\textbf{Investigador responsable:} Alejandro Sanz Huerta
+
+\textbf{Departamento / unidad:} Departamento de Ingeniería Informática
+
+\textbf{Correo de contacto:} alejandro.sanzhuerta@alum.uca.es
+}
+
+\newcommand{\InfoBody}{
+\section*{1. Invitacion}
+Se le invita a participar en una prueba piloto de un sistema experimental de
+seguimiento ocular en realidad virtual. Antes de decidir si desea participar,
+lea este documento con calma y formule cualquier duda que considere necesaria.
+
+\section*{2. Objetivo del estudio}
+El objetivo de esta prueba es evaluar la viabilidad tecnica de un sistema que
+combina videos inmersivos $360^\circ$, seguimiento ocular y analitica de areas
+de interes (AOIs) dentro de un visor de realidad virtual.
+
+\section*{3. En que consiste su participacion}
+Si acepta participar, se le pedira:
+\begin{itemize}
+  \item colocarse un visor de realidad virtual con seguimiento ocular;
+  \item realizar una breve calibracion del sistema;
+  \item visualizar tres videos cortos en $360^\circ$;
+  \item permanecer sentado/a y mirar los videos con normalidad;
+  \item comunicar cualquier incomodidad o deseo de interrumpir la sesion.
+\end{itemize}
+
+La duracion estimada de la sesion completa es de aproximadamente 10 a 15 minutos.
+
+\section*{4. Datos que se recogeran}
+Durante la sesion se recogeran datos tecnicos relacionados con la mirada y con
+la ejecucion del experimento, incluyendo:
+\begin{itemize}
+  \item identificador seudonimizado de participante;
+  \item identificador de sesion y de video presentado;
+  \item direccion y coordenadas esfericas de la mirada;
+  \item identificador de AOI asignada por el sistema;
+  \item medidas de pupila, cuando el dispositivo las proporcione;
+  \item incidencias tecnicas o interrupciones observadas durante la sesion.
+\end{itemize}
+
+No se pretende recoger en los ficheros exportados ningun dato personal directo
+como nombre, DNI, telefono o direccion postal.
+
+\section*{5. Riesgos o molestias previsibles}
+La participacion puede ocasionar molestias leves propias del uso de realidad
+virtual, como fatiga visual, sensacion de mareo, desorientacion, incomodidad en
+el cuello o cansancio general. Si nota cualquier malestar, podra pedir una
+pausa o detener la sesion inmediatamente, sin necesidad de justificarlo.
+
+\section*{6. Beneficios}
+No se garantiza un beneficio personal directo por participar. Su colaboracion
+ayudara a evaluar y mejorar un sistema experimental de analitica visual en
+entornos inmersivos.
+
+\section*{7. Voluntariedad y retirada}
+Su participacion es completamente voluntaria. Puede negarse a participar o
+retirarse en cualquier momento, sin penalizacion ni perjuicio alguno.
+
+\section*{8. Confidencialidad y tratamiento de datos}
+Los datos recogidos se almacenaran de forma seudonimizada y se utilizaran con
+fines de investigacion y validacion tecnica del sistema. En publicaciones,
+informes o presentaciones derivadas del estudio no se incluira informacion que
+permita identificarle personalmente.
+
+\section*{9. Contacto}
+Si tiene preguntas sobre el estudio o desea retirar su consentimiento con
+posterioridad, puede contactar con:
+
+\textbf{Investigador responsable:} Alejandro Sanz Huerta \\
+\textbf{Correo:} alejandro.sanzhuerta@alum.uca.es \\
+\textbf{Departamento / unidad:} Departamento de Ingeniería Informática
+}
+
+\newcommand{\ConsentStatement}{
+Declaro que:
+\begin{itemize}
+  \item he leido y comprendido la informacion recibida sobre este estudio;
+  \item he podido realizar preguntas y he recibido respuestas satisfactorias;
+  \item comprendo que mi participacion es voluntaria y que puedo retirarme en cualquier momento;
+  \item acepto participar en esta prueba piloto.
+\end{itemize}
+}
+
+\newcommand{\SignatureTables}{
+\begin{tabularx}{\textwidth}{|X|X|}
+\hline
+\textbf{Nombre y apellidos de la persona participante} & \\[2.5em]
+\hline
+\textbf{Firma de la persona participante} & \\[2.5em]
+\hline
+\textbf{Fecha} & \\[1.5em]
+\hline
+\end{tabularx}
+
+\vspace{1.2em}
+
+\begin{tabularx}{\textwidth}{|X|X|}
+\hline
+\textbf{Nombre del investigador/a o responsable que informa} & Alejandro Sanz Huerta \\[2.5em]
+\hline
+\textbf{Firma del investigador/a} & \\[2.5em]
+\hline
+\textbf{Fecha} & \\[1.5em]
+\hline
+\end{tabularx}
+}
+
+\begin{document}
+
+\begin{center}
+{\LARGE \textbf{Documento de informacion para la persona participante}}\\[0.5em]
+{\large \StudyTitle}
+\end{center}
+
+\HeaderBlock
+\InfoBody
+
+\medskip
+\textbf{Nota:} esta hoja es informativa y puede quedarse en poder de la persona
+participante.
+
+\newpage
+
+\begin{center}
+{\LARGE \textbf{Copia firmada para la persona participante}}\\[0.5em]
+{\large \StudyTitle}
+\end{center}
+
+\HeaderBlock
+
+\section*{Declaracion de consentimiento}
+\ConsentStatement
+
+\SignatureTables
+
+\vfill
+\textbf{Destino de esta hoja:} ejemplar para la persona participante.
+
+\newpage
+
+\begin{center}
+{\LARGE \textbf{Copia firmada para el investigador}}\\[0.5em]
+{\large \StudyTitle}
+\end{center}
+
+\HeaderBlock
+
+\section*{Declaracion de consentimiento}
+\ConsentStatement
+
+\SignatureTables
+
+\vfill
+\textbf{Destino de esta hoja:} ejemplar para el investigador / archivo del estudio.
+
+\end{document}

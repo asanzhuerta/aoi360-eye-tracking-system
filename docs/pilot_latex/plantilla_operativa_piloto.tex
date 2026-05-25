@@ -1,0 +1,100 @@
+\documentclass[10pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-nodecimaldot]{babel}
+\usepackage[a4paper,margin=1.6cm]{geometry}
+\usepackage{lmodern}
+\usepackage{xcolor}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{hyperref}
+
+\setlength{\parskip}{0.4em}
+\setlength{\parindent}{0pt}
+\renewcommand{\arraystretch}{1.25}
+\setlist[itemize]{leftmargin=1.35em,itemsep=0.12em,topsep=0.2em,parsep=0pt,partopsep=0pt}
+
+\begin{document}
+
+\begin{center}
+{\LARGE \textbf{Plantilla operativa para piloto con 8 participantes}}\\[0.4em]
+{\large Runtime AOI 360 en realidad virtual}
+\end{center}
+
+\textbf{Build congelada:} \texttt{build\textbackslash windows\textbackslash AOI360Runtime\textbackslash AOI360Runtime.exe}\\
+\textbf{Operador principal:} Alejandro Sanz Huerta\\
+\textbf{Ubicacion de pruebas:} Despacho 1710, Edificio de Despachos y Seminarios, Universidad de Cádiz Campus de Jerez.\\
+\textbf{Hardware:} GIGABYTE G5 GD, Windows 10 Pro, Intel Core i5-11400H, NVIDIA GeForce RTX 3050 Laptop GPU, visor HTC VIVE FOCUS VISION con seguimiento ocular.\\
+\textbf{Corpus congelado:} \texttt{test1Camera360}, \texttt{test2Camera360}, \texttt{test3Lions360}\\
+\textbf{Configuracion congelada:} cuenta atras de 5~s, volumen de video al 100\%, pitido activado y volumen del pitido al 75\%.
+
+\section*{1. Checklist previo a cada bloque de sesiones}
+\begin{itemize}
+  \item Confirmar que se usa siempre la misma build congelada.
+  \item Verificar que solo aparecen los tres videos del corpus congelado.
+  \item Comprobar limpieza, ajuste y bateria del visor.
+  \item Confirmar que la sala tiene condiciones estables de luz y ruido.
+  \item Verificar la carpeta de exportacion CSV y anotar la hora de inicio del bloque.
+  \item Tener preparado y firmado el consentimiento informado antes de iniciar la sesion.
+  \item Recordar al participante que puede detener la prueba en cualquier momento.
+\end{itemize}
+
+\section*{2. Hoja maestra de seguimiento}
+
+\begingroup
+\setlength{\tabcolsep}{4pt}
+\scriptsize
+\begin{longtable}{|>{\bfseries}p{0.85cm}|p{1.55cm}|p{0.9cm}|p{3.25cm}|p{1.0cm}|p{0.95cm}|p{0.95cm}|p{1.15cm}|p{5.2cm}|}
+\hline
+ID & Fecha & Hora & Orden & Calib. & Recal. & Comp. & Excl. & CSV / incidencias \\
+\hline
+P01 & & & t1 $\rightarrow$ t2 $\rightarrow$ t3 & & & & & \\
+\hline
+P02 & & & t1 $\rightarrow$ t3 $\rightarrow$ t2 & & & & & \\
+\hline
+P03 & & & t2 $\rightarrow$ t1 $\rightarrow$ t3 & & & & & \\
+\hline
+P04 & & & t2 $\rightarrow$ t3 $\rightarrow$ t1 & & & & & \\
+\hline
+P05 & & & t3 $\rightarrow$ t1 $\rightarrow$ t2 & & & & & \\
+\hline
+P06 & & & t3 $\rightarrow$ t2 $\rightarrow$ t1 & & & & & \\
+\hline
+P07 & & & t1 $\rightarrow$ t2 $\rightarrow$ t3 & & & & & \\
+\hline
+P08 & & & t2 $\rightarrow$ t3 $\rightarrow$ t1 & & & & & \\
+\hline
+\end{longtable}
+\endgroup
+
+\textbf{Clave:} \texttt{t1 = test1Camera360}, \texttt{t2 = test2Camera360},
+\texttt{t3 = test3Lions360}.
+
+\section*{3. Registro minimo por participante}
+\begin{itemize}
+  \item Codigo externo del participante y franja horaria.
+  \item Si la calibracion inicial fue satisfactoria.
+  \item Numero de recalibraciones realizadas.
+  \item Si la sesion se completo o se interrumpio.
+  \item Motivo de exclusion si aplica: calibracion fallida, mareo, abandono, video no completado o CSV no interpretable.
+  \item Nombres de los CSV generados para esa persona.
+\end{itemize}
+
+\textbf{Nota operativa importante:} el runtime exporta \texttt{participant\_id}
+y \texttt{session\_id} automaticamente. Para evitar ambiguedades al analizar los
+datos, anota siempre en esta hoja los nombres exactos de los CSV generados y su
+correspondencia con el codigo externo del participante.
+
+\section*{4. Checklist de cierre del dia}
+\begin{itemize}
+  \item Confirmar que todos los CSV del bloque existen y no estan vacios.
+  \item Revisar rapidamente que cada CSV tenga el \texttt{video\_id} correcto.
+  \item Guardar copia de seguridad de los CSV del dia.
+  \item Registrar cualquier incidencia tecnica repetida.
+  \item No modificar la build congelada ni los AOI assets entre participantes.
+\end{itemize}
+
+\end{document}

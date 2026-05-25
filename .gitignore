@@ -78,3 +78,17 @@ data/exports/*
 .codex_unity_stub.cs
 vlc-help.txt
 docs/latex/*.synctex*
+docs/pilot_latex/consentimiento_piloto.aux
+docs/pilot_latex/consentimiento_piloto.fdb_latexmk
+docs/pilot_latex/consentimiento_piloto.fls
+docs/pilot_latex/consentimiento_piloto.log
+docs/pilot_latex/consentimiento_piloto.out
+docs/pilot_latex/consentimiento_piloto.pdf
+docs/pilot_latex/consentimiento_piloto.synctex.gz
+docs/pilot_latex/plantilla_operativa_piloto.aux
+docs/pilot_latex/plantilla_operativa_piloto.fdb_latexmk
+docs/pilot_latex/plantilla_operativa_piloto.fls
+docs/pilot_latex/plantilla_operativa_piloto.log
+docs/pilot_latex/plantilla_operativa_piloto.out
+docs/pilot_latex/plantilla_operativa_piloto.pdf
+docs/pilot_latex/plantilla_operativa_piloto.synctex.gz
