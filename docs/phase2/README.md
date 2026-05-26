@@ -1,32 +1,34 @@
 # Phase 2 Documentation
 
-Phase 2 is the stable Unity runtime stage of the AOI360 system.
+Phase 2 is the Unity/OpenXR runtime layer of the AOI360 system. It is the stage
+that runs the VR experiment, resolves AOI hits in real time, and exports the
+fixation-level CSV files later consumed by Phase 3.
 
-Its purpose is to validate the runtime experiment loop before the offline AOI generation pipeline is connected:
+## Current runtime scope
 
-- play one 360 video in VR
-- read real eye tracking data
-- map gaze onto the equirectangular stimulus
-- resolve AOI hits from a precomputed AOI map
-- visualize fixations in the headset
-- export fixation-based CSV data
+The current runtime supports:
 
-## Scope
+- 360 video playback in VR
+- OpenXR eye gaze acquisition with HTC VIVE fallback
+- spherical gaze mapping to azimuth, elevation, and equirectangular UV
+- exact-color AOI lookup against precomputed AOI maps
+- optional AOI overlay rendering on an inner validation sphere
+- fixation visualization and fixation-level CSV export
+- repository-local Windows builds that preserve repo-backed data discovery
 
-Phase 2 does not yet generate AOIs automatically inside Unity. AOI maps are still produced offline, but the runtime contract is already structured so the Python pipeline can drop in generated maps and metadata without rewriting the Unity side.
+## Frozen pilot state
 
-## Key outputs
+The participant-facing runtime was frozen around a three-stimulus pilot corpus:
 
-- runtime AOI hit detection
-- AOI overlay visualization
-- fixation commits every `250 ms`
-- fixation trail history capped at `10` markers
-- CSV export with AOI hit information
-- pupil diameters when HTC eye tracker data is available
+- `test1Camera360`
+- `test2Camera360`
+- `test3Lions360`
 
-## Phase 2 manual: installation
+The build used for pilot collection is repository-local:
 
-Minimum local setup:
+- `build/windows/AOI360Runtime/AOI360Runtime.exe`
+
+## Minimum local setup
 
 1. Open the Unity project under `unity/AOI360Runtime/`.
 2. Use the current project baseline:
@@ -40,11 +42,11 @@ Minimum local setup:
    - `data/processed/id_maps/<video_name>/`
    - `data/processed/metadata/<video_name>_aoi_sequence_manifest.json`
 
-The editor workflow currently prioritizes repository-backed data. `StreamingAssets` remains the packaging path for later builds, but it is no longer the main day-to-day authoring path.
+The editor workflow prioritizes repository-backed data. `StreamingAssets`
+remains the packaging path for standalone builds, but it is no longer the main
+authoring path during development.
 
-## Phase 2 manual: execution
-
-Recommended runtime flow in the Editor:
+## Recommended editor flow
 
 1. Open `Initial_Scene`.
 2. Enter Play mode.
@@ -53,41 +55,37 @@ Recommended runtime flow in the Editor:
 5. Run the headset test and end the experiment with the configured controller binding.
 6. Check the exported CSV under `data/exports/csv/`.
 
-If the runtime cannot resolve the repository root, the CSV exporter falls back to `Application.persistentDataPath/Exports`. That fallback is mainly for packaged builds or unusual folder layouts.
+If the runtime cannot resolve the repository root, the CSV exporter falls back
+to `Application.persistentDataPath/Exports/csv`. That fallback is mainly for
+packaged builds or unusual folder layouts.
 
-## Phase 2 manual: Windows build for SteamVR runtime
+## Recommended Windows build flow
 
-If we now want to work with a `Windows x64` build that runs through `SteamVR`, the recommended path is:
+If you want a `Windows x64` build that runs through `SteamVR`, the intended path
+is:
 
 1. Open the Unity project under `unity/AOI360Runtime/`.
 2. Keep `OpenXR` as the XR backend for `Standalone`.
 3. Make sure `SteamVR` is the active OpenXR runtime on the PC that will execute the build.
-4. If the target headset uses HTC eye tracking on PC, start its eye-tracking runtime first.
+4. If the headset uses HTC eye tracking on PC, start its eye-tracking runtime first.
 5. Use `Tools > AOI > Build Windows x64 Player`.
 6. Let Unity generate the player under `build/windows/AOI360Runtime/AOI360Runtime.exe`.
 7. Launch that repository-local build without moving it outside the repo.
 
-This keeps the build inside the repository tree, so the runtime can still resolve:
+This preserves access to:
 
 - `data/input_videos/`
 - `data/processed/`
 - `data/exports/csv/`
 
-With that layout, the same repository-backed workflow used in the Editor is preserved and the CSV export continues to land in `data/exports/csv/`.
+If the `.exe` is moved outside the repository, the runtime can lose that
+repository-backed behavior. In that case, define `AOI360_REPOSITORY_ROOT`
+before launching the player or pass `--aoi360-repo-root=<absolute_repo_path>`.
 
-If the `.exe` is moved outside the repository, the runtime can lose that repository-backed behavior. In that case, define `AOI360_REPOSITORY_ROOT` before launching the player or pass `--aoi360-repo-root=<absolute_repo_path>`.
+## Day-to-day maintenance flow
 
-Important runtime note:
-
-- this project already targets `Standalone + OpenXR`
-- the runtime input bindings are based on `XRController` / `OpenXRController`
-- eye gaze is read first from the HTC-specific eye-tracker path when available and then falls back to the generic OpenXR eye-gaze path
-
-So the intended PC path is `Windows build -> OpenXR -> SteamVR runtime`, not `Windows build -> legacy SteamVR Unity plugin`.
-
-## Phase 2 manual: refresh the Windows build with new videos
-
-For the day-to-day operational flow, use:
+For the operational flow when the content changes but the Unity runtime itself
+does not, use:
 
 - `windows-build-refresh-runbook.md`
 
@@ -99,21 +97,15 @@ That runbook documents the full chain:
 4. run the VR session through `SteamVR`
 5. hand the exported CSVs to Phase 3 analytics
 
-This is now the recommended maintenance path when the content changes but the Unity runtime itself does not.
+## Expected runtime sequence
 
-## Expected headset flow
-
-The current documented Phase 2 flow is:
+The current documented participant flow is:
 
 1. choose a processed stimulus in `Initial_Scene`
 2. load `Phase2_360Playback_VR_sampleRIG`
-3. show a `5 -> 0` countdown while video, AOI metadata, AOI maps, and eye-gaze runtime finish preparing
+3. show the countdown while video, AOI metadata, AOI maps, and eye-gaze runtime prepare
 4. start the video only after the countdown has completed
-5. export the experiment CSV when the operator ends the session with the right controller `A` button
-
-## Build note
-
-The repository-backed discovery path is still the reference workflow used during development. For PC builds, the new recommended approach is to generate the player inside `build/windows/` so the executable remains under the same repo tree and can keep using repository-backed stimuli plus repository-local CSV export.
+5. export the experiment CSV when the operator ends the session
 
 ## Documents
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import inspect
+import os
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable
@@ -42,6 +43,10 @@ def _lazy_import_transformers_stack():
     # Delay the heavy ML imports until the command actually runs so simple
     # metadata operations and --help stay cheap and environment-friendly.
     configure_huggingface_cache_environment()
+    # CUDA allocations on small Windows laptop GPUs are prone to fragmentation.
+    # Enable expandable segments by default unless the operator already
+    # provided a more specific allocator configuration.
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     try:
         import torch
         from PIL import Image
@@ -286,6 +291,14 @@ def _resize_for_inference(image, image_module, max_width: int | None, max_height
     return image.resize((resized_width, resized_height), _resolve_resampling_filter(image_module))
 
 
+def _is_cuda_oom(exception: Exception, torch_module) -> bool:
+    if hasattr(torch_module, "OutOfMemoryError") and isinstance(exception, torch_module.OutOfMemoryError):
+        return True
+
+    message = str(exception).lower()
+    return "out of memory" in message and "cuda" in message
+
+
 def _prepare_frame(
     frame_path: Path,
     image_module,
@@ -404,90 +417,142 @@ def detect_frames(
         raise RuntimeError(f"No images found in: {frames_dir}")
 
     rows: list[dict[str, object]] = []
-
-    iterator = frame_paths
-    if progress_callback is None:
-        iterator = tqdm(frame_paths, desc="Running Grounding DINO")
-
     total_frames = len(frame_paths)
     _emit_progress(progress_callback, 0, total_frames, "Loading Grounding DINO and preparing detections.")
 
-    del iterator  # The tqdm wrapper is replaced by explicit batched progress below.
-    image_loader = lambda path: _prepare_frame(
-        frame_path=path,
-        image_module=Image,
-        inference_max_width=inference_max_width,
-        inference_max_height=inference_max_height,
-    )
-
-    processed_index = 0
-    batch_starts = range(0, len(frame_paths), effective_batch_size)
-    if progress_callback is None:
-        batch_starts = tqdm(batch_starts, desc="Running Grounding DINO")
-
-    for batch_start in batch_starts:
-        batch_paths = frame_paths[batch_start: batch_start + effective_batch_size]
-        if effective_preload_workers > 1 and len(batch_paths) > 1:
-            with ThreadPoolExecutor(max_workers=min(effective_preload_workers, len(batch_paths))) as executor:
-                prepared_batch = list(executor.map(image_loader, batch_paths))
-        else:
-            prepared_batch = [image_loader(frame_path) for frame_path in batch_paths]
-
-        input_images = [prepared_frame.image for prepared_frame in prepared_batch]
-        target_sizes = [prepared_frame.target_size for prepared_frame in prepared_batch]
-        input_prompts = [text_prompt] * len(prepared_batch)
-        inputs = processor(images=input_images, text=input_prompts, return_tensors="pt").to(device)
-        with torch.inference_mode():
-            if device == "cuda" and resolved_precision == "fp16":
-                with torch.autocast(device_type="cuda", dtype=torch.float16):
-                    outputs = model(**inputs)
-            else:
-                outputs = model(**inputs)
-
-        batch_results = _post_process_grounding_dino_results(
-            processor=processor,
-            outputs=outputs,
-            input_ids=inputs.input_ids,
-            box_threshold=box_threshold,
-            text_threshold=text_threshold,
-            target_sizes=target_sizes,
+    def _collect_rows(
+        *,
+        batch_size_for_run: int,
+        max_width_for_run: int | None,
+        max_height_for_run: int | None,
+        clear_cuda_cache_between_batches: bool,
+    ) -> list[dict[str, object]]:
+        collected_rows: list[dict[str, object]] = []
+        image_loader = lambda path: _prepare_frame(
+            frame_path=path,
+            image_module=Image,
+            inference_max_width=max_width_for_run,
+            inference_max_height=max_height_for_run,
         )
 
-        for prepared_frame, results in zip(prepared_batch, batch_results):
-            boxes = results["boxes"].cpu().tolist()
-            scores = results["scores"].cpu().tolist()
-            raw_text_labels = results.get("text_labels")
-            if raw_text_labels is not None:
-                labels = [str(label) for label in raw_text_labels]
-            else:
-                labels = [str(label) for label in results["labels"]]
+        processed_index = 0
+        batch_starts = range(0, len(frame_paths), batch_size_for_run)
+        if progress_callback is None:
+            batch_starts = tqdm(batch_starts, desc="Running Grounding DINO")
 
-            for detection_index, (box, score, label) in enumerate(zip(boxes, scores, labels)):
-                x_min, y_min, x_max, y_max = box
-                rows.append(
-                    {
-                        "frame_index": prepared_frame.frame_index,
-                        "frame_file": prepared_frame.frame_path.name,
-                        "detection_index": detection_index,
-                        "label": label,
-                        "confidence": float(score),
-                        "x_min": float(x_min),
-                        "y_min": float(y_min),
-                        "x_max": float(x_max),
-                        "y_max": float(y_max),
-                        "source": "grounding_dino",
-                        "model_id": model_id,
-                        "prompt": text_prompt,
-                    }
+        for batch_start in batch_starts:
+            batch_paths = frame_paths[batch_start: batch_start + batch_size_for_run]
+            if effective_preload_workers > 1 and len(batch_paths) > 1:
+                with ThreadPoolExecutor(max_workers=min(effective_preload_workers, len(batch_paths))) as executor:
+                    prepared_batch = list(executor.map(image_loader, batch_paths))
+            else:
+                prepared_batch = [image_loader(frame_path) for frame_path in batch_paths]
+
+            input_images = [prepared_frame.image for prepared_frame in prepared_batch]
+            target_sizes = [prepared_frame.target_size for prepared_frame in prepared_batch]
+            input_prompts = [text_prompt] * len(prepared_batch)
+            inputs = processor(images=input_images, text=input_prompts, return_tensors="pt").to(device)
+
+            try:
+                with torch.inference_mode():
+                    if device == "cuda" and resolved_precision == "fp16":
+                        with torch.autocast(device_type="cuda", dtype=torch.float16):
+                            outputs = model(**inputs)
+                    else:
+                        outputs = model(**inputs)
+
+                batch_results = _post_process_grounding_dino_results(
+                    processor=processor,
+                    outputs=outputs,
+                    input_ids=inputs.input_ids,
+                    box_threshold=box_threshold,
+                    text_threshold=text_threshold,
+                    target_sizes=target_sizes,
                 )
 
-            processed_index += 1
-            _emit_progress(
-                progress_callback,
-                processed_index,
-                total_frames,
-                f"Processed {prepared_frame.frame_path.name} with {len(boxes)} detections.",
+                for prepared_frame, results in zip(prepared_batch, batch_results):
+                    boxes = results["boxes"].cpu().tolist()
+                    scores = results["scores"].cpu().tolist()
+                    raw_text_labels = results.get("text_labels")
+                    if raw_text_labels is not None:
+                        labels = [str(label) for label in raw_text_labels]
+                    else:
+                        labels = [str(label) for label in results["labels"]]
+
+                    for detection_index, (box, score, label) in enumerate(zip(boxes, scores, labels)):
+                        x_min, y_min, x_max, y_max = box
+                        collected_rows.append(
+                            {
+                                "frame_index": prepared_frame.frame_index,
+                                "frame_file": prepared_frame.frame_path.name,
+                                "detection_index": detection_index,
+                                "label": label,
+                                "confidence": float(score),
+                                "x_min": float(x_min),
+                                "y_min": float(y_min),
+                                "x_max": float(x_max),
+                                "y_max": float(y_max),
+                                "source": "grounding_dino",
+                                "model_id": model_id,
+                                "prompt": text_prompt,
+                            }
+                        )
+
+                    processed_index += 1
+                    _emit_progress(
+                        progress_callback,
+                        processed_index,
+                        total_frames,
+                        f"Processed {prepared_frame.frame_path.name} with {len(boxes)} detections.",
+                    )
+            finally:
+                if device == "cuda" and clear_cuda_cache_between_batches and hasattr(torch.cuda, "empty_cache"):
+                    torch.cuda.empty_cache()
+
+        return collected_rows
+
+    try:
+        rows = _collect_rows(
+            batch_size_for_run=effective_batch_size,
+            max_width_for_run=inference_max_width,
+            max_height_for_run=inference_max_height,
+            clear_cuda_cache_between_batches=False,
+        )
+    except Exception as exception:
+        safe_max_width = 1280 if inference_max_width is None else min(inference_max_width, 1280)
+        safe_max_height = 640 if inference_max_height is None else min(inference_max_height, 640)
+        should_retry_with_safe_cuda = (
+            device == "cuda" and
+            _is_cuda_oom(exception, torch) and
+            (
+                effective_batch_size > 1 or
+                inference_max_width is None or inference_max_width > safe_max_width or
+                inference_max_height is None or inference_max_height > safe_max_height
             )
+        )
+        if not should_retry_with_safe_cuda:
+            raise
+
+        _emit_log(
+            log_callback,
+            (
+                "[detect_grounding_dino] CUDA inference failed with the current settings. "
+                f"Retrying with a safer configuration: batch_size=1, max_width={safe_max_width}, "
+                f"max_height={safe_max_height}, precision={resolved_precision}."
+            ),
+        )
+        _emit_log(log_callback, f"[detect_grounding_dino] Original error: {type(exception).__name__}: {exception}")
+
+        if hasattr(torch.cuda, "empty_cache"):
+            torch.cuda.empty_cache()
+
+        _emit_progress(progress_callback, 0, total_frames, "Retrying Grounding DINO with safer CUDA settings.")
+        rows = _collect_rows(
+            batch_size_for_run=1,
+            max_width_for_run=safe_max_width,
+            max_height_for_run=safe_max_height,
+            clear_cuda_cache_between_batches=True,
+        )
 
     detections = pd.DataFrame(rows, columns=DETECTION_COLUMNS)
     detections.to_csv(output_csv, index=False)

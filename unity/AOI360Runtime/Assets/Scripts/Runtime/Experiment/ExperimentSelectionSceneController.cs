@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -18,9 +17,7 @@ namespace AOI360.Runtime.Experiment
         // This controller rebuilds the selection UI at runtime so the headset menu
         // always reflects the latest preprocessed stimuli available on disk.
         private static readonly string[] TargetSceneNames = { "Initial_Scene" };
-        private const string StimulusManifestSuffix = "_aoi_sequence_manifest.json";
         private static readonly bool IncludeStreamingAssetsMirror = false;
-        private static readonly string[] PreferredVideoExtensions = { ".mp4", ".mov", ".webm", ".mkv" };
 
         private static readonly string[] PlaybackSceneCandidates =
         {
@@ -33,12 +30,21 @@ namespace AOI360.Runtime.Experiment
         private const float UiDynamicPixelsPerUnit = 96f;
         private const float SelectionCanvasWorldDepthMeters = 2.6f;
         private const float SelectionCanvasScale = 0.0015f;
-        private const float SelectionCanvasMinimumHeightMeters = 1.42f;
-        private const float SelectionCanvasHeightOffsetMeters = 0.1f;
+        private const float SelectionCanvasMinimumHeightMeters = 1.24f;
+        private const float SelectionCanvasHeightOffsetMeters = -0.08f;
 
         private const float StimulusButtonHeight = 86f;
         private const float StimulusButtonSpacing = 10f;
         private const float StimulusButtonTopPadding = 6f;
+        private const float SettingsValueFieldWidth = 176f;
+        private const float SettingsValueFieldRightOffset = 92f;
+        private const float SettingsValueButtonSpacing = 78f;
+
+        private enum SelectionTab
+        {
+            Videos = 0,
+            Settings = 1
+        }
 
         [Header("Scene UI")]
         [SerializeField] private bool preferSceneUi = false;
@@ -55,8 +61,18 @@ namespace AOI360.Runtime.Experiment
         private Canvas rootCanvas;
         private RectTransform rootCanvasRect;
         private RectTransform listContentRoot;
+        private RectTransform videosTabContentRoot;
+        private RectTransform settingsTabContentRoot;
         private TextMeshProUGUI statusText;
         private TextMeshProUGUI sourceSummaryText;
+        private TextMeshProUGUI videosTabButtonLabel;
+        private TextMeshProUGUI settingsTabButtonLabel;
+        private TextMeshProUGUI countdownSecondsValueText;
+        private TextMeshProUGUI videoVolumeValueText;
+        private TextMeshProUGUI countdownBeepStateText;
+        private TextMeshProUGUI countdownBeepVolumeValueText;
+        private Button videosTabButton;
+        private Button settingsTabButton;
         private Camera presentationCamera;
         private bool isLoadingSelection;
         private bool hasCachedCanvasTransform;
@@ -68,6 +84,7 @@ namespace AOI360.Runtime.Experiment
         private InputAction debugTrackedRotationAction;
         private InputAction debugClickAction;
         private float nextInputDebugLogTime;
+        private SelectionTab activeTab = SelectionTab.Videos;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void RegisterSceneHook()
@@ -651,40 +668,85 @@ namespace AOI360.Runtime.Experiment
             subtitleRect.anchoredPosition = new Vector2(0f, -76f);
             subtitleText.raycastTarget = false;
 
-            RectTransform listPanel = ExperimentRuntimeUi.CreateUiObject(
-                "ListPanel",
+            RectTransform tabBar = ExperimentRuntimeUi.CreateUiObject(
+                "TabBar",
+                modal,
+                new Vector2(0f, 1f),
+                new Vector2(1f, 1f)
+            );
+            tabBar.pivot = new Vector2(0.5f, 1f);
+            tabBar.sizeDelta = new Vector2(0f, 56f);
+            tabBar.anchoredPosition = new Vector2(0f, -148f);
+
+            videosTabButton = CreateTabButton(
+                tabBar,
+                "VideosTabButton",
+                "Videos",
+                new Vector2(22f, -2f),
+                () => SetActiveTab(SelectionTab.Videos),
+                out videosTabButtonLabel
+            );
+
+            settingsTabButton = CreateTabButton(
+                tabBar,
+                "SettingsTabButton",
+                "Configuracion",
+                new Vector2(246f, -2f),
+                () => SetActiveTab(SelectionTab.Settings),
+                out settingsTabButtonLabel
+            );
+
+            RectTransform contentPanel = ExperimentRuntimeUi.CreateUiObject(
+                "ContentPanel",
                 modal,
                 new Vector2(0f, 0f),
                 new Vector2(1f, 1f)
             );
 
-            listPanel.offsetMin = new Vector2(40f, 118f);
-            listPanel.offsetMax = new Vector2(-40f, -136f);
+            contentPanel.offsetMin = new Vector2(40f, 118f);
+            contentPanel.offsetMax = new Vector2(-40f, -200f);
 
-            Image listPanelImage = ExperimentRuntimeUi.AddPanelImage(
-                listPanel,
+            Image contentPanelImage = ExperimentRuntimeUi.AddPanelImage(
+                contentPanel,
                 new Color(0.05f, 0.06f, 0.09f, 0.98f)
             );
-            listPanelImage.raycastTarget = false;
-            if (listPanel.gameObject.GetComponent<RectMask2D>() == null)
-            {
-                listPanel.gameObject.AddComponent<RectMask2D>();
-            }
+            contentPanelImage.raycastTarget = false;
 
-            listContentRoot = ExperimentRuntimeUi.CreateUiObject(
-                "Content",
-                listPanel,
+            videosTabContentRoot = ExperimentRuntimeUi.CreateUiObject(
+                "VideosTabContent",
+                contentPanel,
                 new Vector2(0f, 0f),
                 new Vector2(1f, 1f)
             );
+            videosTabContentRoot.offsetMin = new Vector2(16f, 16f);
+            videosTabContentRoot.offsetMax = new Vector2(-16f, -16f);
 
-            listContentRoot.offsetMin = new Vector2(16f, 16f);
-            listContentRoot.offsetMax = new Vector2(-16f, -16f);
+            listContentRoot = ExperimentRuntimeUi.CreateUiObject(
+                "VideoListContent",
+                videosTabContentRoot,
+                new Vector2(0f, 0f),
+                new Vector2(1f, 1f)
+            );
+            listContentRoot.offsetMin = Vector2.zero;
+            listContentRoot.offsetMax = Vector2.zero;
             listContentRoot.pivot = new Vector2(0.5f, 0.5f);
             listContentRoot.anchoredPosition = Vector2.zero;
             listContentRoot.sizeDelta = Vector2.zero;
 
-            Debug.Log("[ExperimentSelectionSceneController] Simple visible list content created without ScrollRect/Mask.");
+            settingsTabContentRoot = ExperimentRuntimeUi.CreateUiObject(
+                "SettingsTabContent",
+                contentPanel,
+                new Vector2(0f, 0f),
+                new Vector2(1f, 1f)
+            );
+            settingsTabContentRoot.offsetMin = new Vector2(16f, 16f);
+            settingsTabContentRoot.offsetMax = new Vector2(-16f, -16f);
+
+            BuildSettingsTab(settingsTabContentRoot);
+            SetActiveTab(SelectionTab.Videos);
+            RefreshRuntimeSettingsUi();
+
+            Debug.Log("[ExperimentSelectionSceneController] Runtime tabs created for videos and configuration.");
 
             sourceSummaryText = ExperimentRuntimeUi.CreateText(
                 "SourceSummary",
@@ -721,6 +783,468 @@ namespace AOI360.Runtime.Experiment
             statusRect.sizeDelta = new Vector2(0f, 46f);
             statusRect.anchoredPosition = new Vector2(0f, 16f);
             statusText.raycastTarget = false;
+        }
+
+        private Button CreateTabButton(
+            Transform parent,
+            string name,
+            string label,
+            Vector2 anchoredPosition,
+            UnityEngine.Events.UnityAction onClick,
+            out TextMeshProUGUI labelText
+        )
+        {
+            Button button = ExperimentRuntimeUi.CreateButton(
+                name,
+                parent,
+                new Color(0.22f, 0.27f, 0.36f, 1f)
+            );
+
+            RectTransform buttonRect = button.GetComponent<RectTransform>();
+            buttonRect.anchorMin = new Vector2(0f, 1f);
+            buttonRect.anchorMax = new Vector2(0f, 1f);
+            buttonRect.pivot = new Vector2(0f, 1f);
+            buttonRect.sizeDelta = new Vector2(208f, 44f);
+            buttonRect.anchoredPosition = anchoredPosition;
+
+            button.onClick.RemoveAllListeners();
+            button.onClick.AddListener(onClick);
+
+            labelText = CreateButtonText(
+                button.transform,
+                "Label",
+                label,
+                18f,
+                FontStyles.Bold,
+                TextAlignmentOptions.Center,
+                Color.white,
+                new Vector2(0f, 0f),
+                new Vector2(1f, 1f),
+                new Vector2(0.5f, 0.5f),
+                Vector2.zero,
+                Vector2.zero,
+                new Vector4(8f, 8f, 8f, 8f),
+                false
+            );
+            labelText.raycastTarget = false;
+            return button;
+        }
+
+        private void BuildSettingsTab(RectTransform parent)
+        {
+            if (parent == null)
+            {
+                return;
+            }
+
+            RectTransform infoPanel = ExperimentRuntimeUi.CreateUiObject(
+                "SettingsInfoPanel",
+                parent,
+                new Vector2(0f, 1f),
+                new Vector2(1f, 1f)
+            );
+            infoPanel.pivot = new Vector2(0.5f, 1f);
+            infoPanel.sizeDelta = new Vector2(0f, 90f);
+            infoPanel.anchoredPosition = Vector2.zero;
+            ExperimentRuntimeUi.AddPanelImage(
+                infoPanel,
+                new Color(0.11f, 0.16f, 0.24f, 0.94f)
+            ).raycastTarget = false;
+
+            TextMeshProUGUI infoText = ExperimentRuntimeUi.CreateText(
+                "SettingsInfoText",
+                infoPanel,
+                "Configura el tiempo de espera, el volumen del video y el pitido de la cuenta atras. Estos ajustes se guardan localmente en este equipo.",
+                18f,
+                FontStyles.Normal,
+                TextAlignmentOptions.MidlineLeft,
+                new Color(0.9f, 0.94f, 0.99f, 0.96f)
+            );
+            infoText.rectTransform.offsetMin = new Vector2(18f, 8f);
+            infoText.rectTransform.offsetMax = new Vector2(-18f, -8f);
+            infoText.raycastTarget = false;
+
+            RectTransform rowsRoot = ExperimentRuntimeUi.CreateUiObject(
+                "SettingsRows",
+                parent,
+                new Vector2(0f, 0f),
+                new Vector2(1f, 1f)
+            );
+            rowsRoot.offsetMin = new Vector2(0f, 58f);
+            rowsRoot.offsetMax = new Vector2(0f, -108f);
+
+            countdownSecondsValueText = CreateStepperSettingRow(
+                rowsRoot,
+                rowIndex: 0,
+                title: "Tiempo hasta lanzar el video",
+                subtitle: "Define cuantos segundos dura la cuenta atras antes de que comience el estimulo.",
+                onDecrease: () => AdjustCountdownSeconds(-1f),
+                onIncrease: () => AdjustCountdownSeconds(1f)
+            );
+
+            videoVolumeValueText = CreateStepperSettingRow(
+                rowsRoot,
+                rowIndex: 1,
+                title: "Volumen del video",
+                subtitle: "Controla el sonido del estimulo durante la reproduccion en la escena VR.",
+                onDecrease: () => AdjustVideoVolume(-0.1f),
+                onIncrease: () => AdjustVideoVolume(0.1f)
+            );
+
+            countdownBeepStateText = CreateToggleSettingRow(
+                rowsRoot,
+                rowIndex: 2,
+                title: "Pitido de cuenta atras",
+                subtitle: "Activa o desactiva el beep que suena en cada segundo visible de la cuenta atras.",
+                onToggle: ToggleCountdownBeep
+            );
+
+            countdownBeepVolumeValueText = CreateStepperSettingRow(
+                rowsRoot,
+                rowIndex: 3,
+                title: "Volumen del pitido",
+                subtitle: "Ajusta la intensidad del beep de cuenta atras sin afectar al volumen del video.",
+                onDecrease: () => AdjustCountdownBeepVolume(-0.1f),
+                onIncrease: () => AdjustCountdownBeepVolume(0.1f)
+            );
+
+            TextMeshProUGUI footerText = ExperimentRuntimeUi.CreateText(
+                "SettingsFooter",
+                parent,
+                "El video seleccionado usara estos valores al abrir la escena de experimento.",
+                16f,
+                FontStyles.Italic,
+                TextAlignmentOptions.BottomLeft,
+                new Color(0.8f, 0.86f, 0.95f, 0.92f)
+            );
+            RectTransform footerRect = footerText.rectTransform;
+            footerRect.anchorMin = new Vector2(0f, 0f);
+            footerRect.anchorMax = new Vector2(1f, 0f);
+            footerRect.pivot = new Vector2(0.5f, 0f);
+            footerRect.sizeDelta = new Vector2(0f, 42f);
+            footerRect.anchoredPosition = new Vector2(0f, 8f);
+            footerText.raycastTarget = false;
+        }
+
+        private TextMeshProUGUI CreateStepperSettingRow(
+            Transform parent,
+            int rowIndex,
+            string title,
+            string subtitle,
+            UnityEngine.Events.UnityAction onDecrease,
+            UnityEngine.Events.UnityAction onIncrease
+        )
+        {
+            RectTransform row = CreateSettingsRowContainer(parent, $"StepperRow_{rowIndex}", rowIndex);
+
+            TextMeshProUGUI titleText = ExperimentRuntimeUi.CreateText(
+                "Title",
+                row,
+                title,
+                21f,
+                FontStyles.Bold,
+                TextAlignmentOptions.TopLeft,
+                Color.white
+            );
+            titleText.rectTransform.offsetMin = new Vector2(18f, 46f);
+            titleText.rectTransform.offsetMax = new Vector2(-300f, -10f);
+            titleText.raycastTarget = false;
+
+            TextMeshProUGUI subtitleText = ExperimentRuntimeUi.CreateText(
+                "Subtitle",
+                row,
+                subtitle,
+                15f,
+                FontStyles.Normal,
+                TextAlignmentOptions.BottomLeft,
+                new Color(0.8f, 0.86f, 0.95f, 0.94f)
+            );
+            subtitleText.rectTransform.offsetMin = new Vector2(18f, 10f);
+            subtitleText.rectTransform.offsetMax = new Vector2(-300f, -42f);
+            subtitleText.raycastTarget = false;
+
+            TextMeshProUGUI valueText = ExperimentRuntimeUi.CreateText(
+                "Value",
+                row,
+                string.Empty,
+                19f,
+                FontStyles.Bold,
+                TextAlignmentOptions.Center,
+                new Color(1f, 0.94f, 0.74f, 1f)
+            );
+            RectTransform valueRect = valueText.rectTransform;
+            valueRect.anchorMin = new Vector2(1f, 0.5f);
+            valueRect.anchorMax = new Vector2(1f, 0.5f);
+            valueRect.pivot = new Vector2(1f, 0.5f);
+            valueRect.sizeDelta = new Vector2(SettingsValueFieldWidth, 34f);
+            valueRect.anchoredPosition = new Vector2(-SettingsValueFieldRightOffset, 8f);
+            valueText.raycastTarget = false;
+            valueText.horizontalAlignment = HorizontalAlignmentOptions.Center;
+            valueText.verticalAlignment = VerticalAlignmentOptions.Middle;
+
+            CreateCompactActionButton(
+                row,
+                "DecreaseButton",
+                "-",
+                new Vector2(
+                    -(SettingsValueFieldRightOffset + SettingsValueButtonSpacing),
+                    8f
+                ),
+                onDecrease
+            );
+
+            CreateCompactActionButton(
+                row,
+                "IncreaseButton",
+                "+",
+                new Vector2(
+                    -(SettingsValueFieldRightOffset - SettingsValueButtonSpacing),
+                    8f
+                ),
+                onIncrease
+            );
+
+            return valueText;
+        }
+
+        private TextMeshProUGUI CreateToggleSettingRow(
+            Transform parent,
+            int rowIndex,
+            string title,
+            string subtitle,
+            UnityEngine.Events.UnityAction onToggle
+        )
+        {
+            RectTransform row = CreateSettingsRowContainer(parent, $"ToggleRow_{rowIndex}", rowIndex);
+
+            TextMeshProUGUI titleText = ExperimentRuntimeUi.CreateText(
+                "Title",
+                row,
+                title,
+                21f,
+                FontStyles.Bold,
+                TextAlignmentOptions.TopLeft,
+                Color.white
+            );
+            titleText.rectTransform.offsetMin = new Vector2(18f, 46f);
+            titleText.rectTransform.offsetMax = new Vector2(-300f, -10f);
+            titleText.raycastTarget = false;
+
+            TextMeshProUGUI subtitleText = ExperimentRuntimeUi.CreateText(
+                "Subtitle",
+                row,
+                subtitle,
+                15f,
+                FontStyles.Normal,
+                TextAlignmentOptions.BottomLeft,
+                new Color(0.8f, 0.86f, 0.95f, 0.94f)
+            );
+            subtitleText.rectTransform.offsetMin = new Vector2(18f, 10f);
+            subtitleText.rectTransform.offsetMax = new Vector2(-300f, -42f);
+            subtitleText.raycastTarget = false;
+
+            Button toggleButton = ExperimentRuntimeUi.CreateButton(
+                "ToggleButton",
+                row,
+                new Color(0.23f, 0.35f, 0.22f, 1f)
+            );
+            RectTransform toggleRect = toggleButton.GetComponent<RectTransform>();
+            toggleRect.anchorMin = new Vector2(1f, 0.5f);
+            toggleRect.anchorMax = new Vector2(1f, 0.5f);
+            toggleRect.pivot = new Vector2(1f, 0.5f);
+            toggleRect.sizeDelta = new Vector2(218f, 46f);
+            toggleRect.anchoredPosition = new Vector2(-18f, 8f);
+            toggleButton.onClick.RemoveAllListeners();
+            toggleButton.onClick.AddListener(onToggle);
+
+            TextMeshProUGUI stateText = CreateButtonText(
+                toggleButton.transform,
+                "StateLabel",
+                string.Empty,
+                18f,
+                FontStyles.Bold,
+                TextAlignmentOptions.Center,
+                Color.white,
+                new Vector2(0f, 0f),
+                new Vector2(1f, 1f),
+                new Vector2(0.5f, 0.5f),
+                Vector2.zero,
+                Vector2.zero,
+                new Vector4(8f, 8f, 8f, 8f),
+                false
+            );
+            stateText.raycastTarget = false;
+            return stateText;
+        }
+
+        private RectTransform CreateSettingsRowContainer(Transform parent, string name, int rowIndex)
+        {
+            RectTransform row = ExperimentRuntimeUi.CreateUiObject(
+                name,
+                parent,
+                new Vector2(0f, 1f),
+                new Vector2(1f, 1f)
+            );
+            row.pivot = new Vector2(0.5f, 1f);
+            row.sizeDelta = new Vector2(0f, 94f);
+            row.anchoredPosition = new Vector2(0f, -(rowIndex * 108f));
+            ExperimentRuntimeUi.AddPanelImage(
+                row,
+                new Color(0.11f, 0.13f, 0.18f, 0.98f)
+            ).raycastTarget = false;
+            return row;
+        }
+
+        private Button CreateCompactActionButton(
+            Transform parent,
+            string name,
+            string label,
+            Vector2 anchoredPosition,
+            UnityEngine.Events.UnityAction onClick
+        )
+        {
+            Button button = ExperimentRuntimeUi.CreateButton(
+                name,
+                parent,
+                new Color(0.95f, 0.45f, 0.05f, 1f)
+            );
+            RectTransform buttonRect = button.GetComponent<RectTransform>();
+            buttonRect.anchorMin = new Vector2(1f, 0.5f);
+            buttonRect.anchorMax = new Vector2(1f, 0.5f);
+            buttonRect.pivot = new Vector2(1f, 0.5f);
+            buttonRect.sizeDelta = new Vector2(58f, 44f);
+            buttonRect.anchoredPosition = anchoredPosition;
+            button.onClick.RemoveAllListeners();
+            button.onClick.AddListener(onClick);
+
+            TextMeshProUGUI buttonLabel = CreateButtonText(
+                button.transform,
+                "ButtonLabel",
+                label,
+                24f,
+                FontStyles.Bold,
+                TextAlignmentOptions.Center,
+                Color.white,
+                new Vector2(0f, 0f),
+                new Vector2(1f, 1f),
+                new Vector2(0.5f, 0.5f),
+                Vector2.zero,
+                Vector2.zero,
+                new Vector4(8f, 8f, 8f, 8f),
+                false
+            );
+            buttonLabel.raycastTarget = false;
+            return button;
+        }
+
+        private void SetActiveTab(SelectionTab tab)
+        {
+            activeTab = tab;
+
+            if (videosTabContentRoot != null)
+            {
+                videosTabContentRoot.gameObject.SetActive(tab == SelectionTab.Videos);
+            }
+
+            if (settingsTabContentRoot != null)
+            {
+                settingsTabContentRoot.gameObject.SetActive(tab == SelectionTab.Settings);
+            }
+
+            UpdateTabButtonStyle(
+                videosTabButton,
+                videosTabButtonLabel,
+                tab == SelectionTab.Videos
+            );
+            UpdateTabButtonStyle(
+                settingsTabButton,
+                settingsTabButtonLabel,
+                tab == SelectionTab.Settings
+            );
+        }
+
+        private static void UpdateTabButtonStyle(Button button, TextMeshProUGUI label, bool isActive)
+        {
+            if (button == null)
+            {
+                return;
+            }
+
+            Image buttonImage = button.targetGraphic as Image;
+            if (buttonImage != null)
+            {
+                buttonImage.color = isActive
+                    ? new Color(0.95f, 0.45f, 0.05f, 1f)
+                    : new Color(0.22f, 0.27f, 0.36f, 1f);
+            }
+
+            if (label != null)
+            {
+                label.color = isActive
+                    ? Color.white
+                    : new Color(0.83f, 0.88f, 0.96f, 0.98f);
+            }
+        }
+
+        private void RefreshRuntimeSettingsUi()
+        {
+            if (countdownSecondsValueText != null)
+            {
+                countdownSecondsValueText.text = $"{ExperimentRuntimeSettings.CountdownSeconds:0} s";
+            }
+
+            if (videoVolumeValueText != null)
+            {
+                videoVolumeValueText.text = $"{Mathf.RoundToInt(ExperimentRuntimeSettings.VideoVolume * 100f)}%";
+            }
+
+            if (countdownBeepStateText != null)
+            {
+                countdownBeepStateText.text = ExperimentRuntimeSettings.CountdownBeepEnabled
+                    ? "Activado"
+                    : "Desactivado";
+            }
+
+            if (countdownBeepVolumeValueText != null)
+            {
+                countdownBeepVolumeValueText.text =
+                    $"{Mathf.RoundToInt(ExperimentRuntimeSettings.CountdownBeepVolume * 100f)}%";
+                countdownBeepVolumeValueText.color = ExperimentRuntimeSettings.CountdownBeepEnabled
+                    ? new Color(1f, 0.94f, 0.74f, 1f)
+                    : new Color(0.66f, 0.71f, 0.79f, 0.92f);
+            }
+        }
+
+        private void AdjustCountdownSeconds(float delta)
+        {
+            ExperimentRuntimeSettings.SetCountdownSeconds(
+                ExperimentRuntimeSettings.CountdownSeconds + delta
+            );
+            RefreshRuntimeSettingsUi();
+        }
+
+        private void AdjustVideoVolume(float delta)
+        {
+            ExperimentRuntimeSettings.SetVideoVolume(
+                ExperimentRuntimeSettings.VideoVolume + delta
+            );
+            RefreshRuntimeSettingsUi();
+        }
+
+        private void ToggleCountdownBeep()
+        {
+            ExperimentRuntimeSettings.SetCountdownBeepEnabled(
+                !ExperimentRuntimeSettings.CountdownBeepEnabled
+            );
+            RefreshRuntimeSettingsUi();
+        }
+
+        private void AdjustCountdownBeepVolume(float delta)
+        {
+            ExperimentRuntimeSettings.SetCountdownBeepVolume(
+                ExperimentRuntimeSettings.CountdownBeepVolume + delta
+            );
+            RefreshRuntimeSettingsUi();
         }
 
         private void ConfigurePresentationCanvas(GameObject canvasObject, RectTransform canvasRect)
@@ -1149,7 +1673,14 @@ namespace AOI360.Runtime.Experiment
                 $"scene={ResolvePlaybackSceneName()}"
             );
 
-            ExperimentSessionState.SetSelectedStimulus(stimulus, lockPlaybackStart: true, countdownSeconds: 5f);
+            ExperimentSessionState.SetSelectedStimulus(
+                stimulus,
+                lockPlaybackStart: true,
+                countdownSeconds: ExperimentRuntimeSettings.CountdownSeconds,
+                videoVolume: ExperimentRuntimeSettings.VideoVolume,
+                countdownBeepEnabled: ExperimentRuntimeSettings.CountdownBeepEnabled,
+                countdownBeepVolume: ExperimentRuntimeSettings.CountdownBeepVolume
+            );
 
             if (statusText != null)
             {
@@ -1188,50 +1719,10 @@ namespace AOI360.Runtime.Experiment
 
         private static List<ExperimentStimulusDefinition> DiscoverAvailableStimuli()
         {
-            Dictionary<string, ExperimentStimulusDefinition> stimuliByKey =
-                new Dictionary<string, ExperimentStimulusDefinition>(StringComparer.OrdinalIgnoreCase);
-
-            AddRepositoryStimuli(stimuliByKey);
-            if (IncludeStreamingAssetsMirror)
-            {
-                AddStreamingAssetStimuli(stimuliByKey);
-            }
-
-            List<ExperimentStimulusDefinition> stimuli =
-                new List<ExperimentStimulusDefinition>(stimuliByKey.Values);
-
-            stimuli.Sort(delegate (ExperimentStimulusDefinition left, ExperimentStimulusDefinition right)
-            {
-                return string.Compare(left.DisplayName, right.DisplayName, StringComparison.OrdinalIgnoreCase);
-            });
-
-            return stimuli;
-        }
-
-        private static void AddRepositoryStimuli(Dictionary<string, ExperimentStimulusDefinition> stimuliByKey)
-        {
-            string repositoryRoot;
-            if (!TryResolveRepositoryRoot(out repositoryRoot))
-            {
-                return;
-            }
-
-            string inputVideosRoot = Path.Combine(repositoryRoot, "data", "input_videos");
-            string processedMetadataRoot = Path.Combine(repositoryRoot, "data", "processed", "metadata");
-            string processedMapsRoot = Path.Combine(repositoryRoot, "data", "processed", "id_maps");
-
-            if (!Directory.Exists(inputVideosRoot) ||
-                !Directory.Exists(processedMetadataRoot) ||
-                !Directory.Exists(processedMapsRoot))
-            {
-                return;
-            }
-
-            string[] manifestPaths = Directory.GetFiles(
-                processedMetadataRoot,
-                "*" + StimulusManifestSuffix,
-                SearchOption.TopDirectoryOnly
+            return ExperimentStimulusCatalog.DiscoverAvailableStimuli(
+                includeStreamingAssetsMirror: IncludeStreamingAssetsMirror
             );
+<<<<<<< HEAD
 
             for (int i = 0; i < manifestPaths.Length; i++)
             {
@@ -1379,6 +1870,8 @@ namespace AOI360.Runtime.Experiment
                    normalized == ".mkv" ||
                    normalized == ".mov" ||
                    normalized == ".webm";
+=======
+>>>>>>> feat/pilot-test-ready
         }
 
         private void EnsureCanvasRaycasters(GameObject canvasObject)

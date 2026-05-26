@@ -6,10 +6,12 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "pandas",
+    "pillow",
 ]
 
 [project.scripts]
 aoi360-analyze-runtime-exports = "aoi360_analytics.cli:main"
+aoi360-compare-runtime-aoi-sources = "aoi360_analytics.comparison_cli:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

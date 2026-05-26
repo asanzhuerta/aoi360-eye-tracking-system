@@ -26,6 +26,8 @@ namespace AOI360.Runtime.Video
         [SerializeField] private string videoFileName = "sample360.mp4";
         [SerializeField] private bool playOnStart = true;
         [SerializeField] private bool loop = true;
+        [SerializeField] private bool enableVideoAudio = true;
+        [SerializeField] [Range(0f, 1f)] private float defaultVideoVolume = 1f;
 
         [Header("Output")]
         [SerializeField] private RenderTexture targetTexture;
@@ -47,6 +49,7 @@ namespace AOI360.Runtime.Video
         [SerializeField] private bool allowFrameDrop = true;
 
         private VideoPlayer videoPlayer;
+        private AudioSource videoAudioSource;
         private bool isPrepared;
         private bool hasPreparationStarted;
         private bool hasPreparationFailed;
@@ -97,12 +100,13 @@ namespace AOI360.Runtime.Video
 
             EnsureRuntimeOutput();
             ResolveImmersiveOutputReferences();
+            EnsureVideoAudioSource();
 
             videoPlayer.playOnAwake = false;
             videoPlayer.isLooping = loop;
             videoPlayer.renderMode = VideoRenderMode.RenderTexture;
             videoPlayer.targetTexture = targetTexture;
-            videoPlayer.audioOutputMode = VideoAudioOutputMode.None;
+            ConfigureVideoAudioOutput();
             videoPlayer.sendFrameReadyEvents = false;
             videoPlayer.skipOnDrop = allowFrameDrop;
             videoPlayer.waitForFirstFrame = true;
@@ -117,6 +121,7 @@ namespace AOI360.Runtime.Video
             EnsureImmersiveSphereOutput();
             SetImmersiveSphereVisible(false);
             ApplySelectedStimulusOverride();
+            ApplySessionAudioSettings();
             // Preparation begins in Awake so the countdown can hide the load cost
             // before playback is explicitly unlocked by the flow controller.
             BeginPrepareIfNeeded();
@@ -189,6 +194,57 @@ namespace AOI360.Runtime.Video
                 Destroy(runtimeVideoSphereMaterial);
                 runtimeVideoSphereMaterial = null;
             }
+        }
+
+        private void EnsureVideoAudioSource()
+        {
+            if (videoAudioSource == null)
+            {
+                videoAudioSource = GetComponent<AudioSource>();
+            }
+
+            if (videoAudioSource == null)
+            {
+                videoAudioSource = gameObject.AddComponent<AudioSource>();
+            }
+
+            videoAudioSource.playOnAwake = false;
+            videoAudioSource.loop = false;
+            videoAudioSource.spatialBlend = 0f;
+            videoAudioSource.volume = defaultVideoVolume;
+        }
+
+        private void ConfigureVideoAudioOutput()
+        {
+            if (!enableVideoAudio)
+            {
+                videoPlayer.audioOutputMode = VideoAudioOutputMode.None;
+                return;
+            }
+
+            if (videoAudioSource == null)
+            {
+                EnsureVideoAudioSource();
+            }
+
+            videoPlayer.audioOutputMode = VideoAudioOutputMode.AudioSource;
+            videoPlayer.controlledAudioTrackCount = 1;
+            videoPlayer.EnableAudioTrack(0, true);
+            videoPlayer.SetTargetAudioSource(0, videoAudioSource);
+        }
+
+        private void ApplySessionAudioSettings()
+        {
+            if (videoAudioSource == null)
+            {
+                return;
+            }
+
+            float resolvedVolume = ExperimentSessionState.HasSelectedStimulus
+                ? ExperimentSessionState.VideoVolume
+                : defaultVideoVolume;
+
+            videoAudioSource.volume = Mathf.Clamp01(resolvedVolume);
         }
 
         private void EnsureRuntimeOutput()
@@ -657,6 +713,7 @@ namespace AOI360.Runtime.Video
             }
 
             ApplySkyboxOutput();
+            ApplySessionAudioSettings();
             playRequestedBeforePrepare = false;
             hasReachedPlaybackEnd = false;
             SetImmersiveSphereVisible(true);

@@ -283,6 +283,8 @@ def build_aoi_sequence(
     include_labels: list[str] | None = None,
     min_confidence: float = 0.35,
     box_padding: int = 0,
+    frame_nms_iou_threshold: float | None = None,
+    normalize_labels_to_prompt_vocab: bool = False,
     max_track_frame_gap: int = 20,
     min_track_iou: float = 0.05,
     max_track_center_distance_ratio: float = 0.08,
@@ -304,6 +306,8 @@ def build_aoi_sequence(
         detections_csv=detections_csv,
         include_labels=include_labels,
         min_confidence=min_confidence,
+        frame_nms_iou_threshold=frame_nms_iou_threshold,
+        normalize_labels_to_prompt_vocab=normalize_labels_to_prompt_vocab,
     )
 
     output_maps_dir = Path(output_maps_dir)
@@ -615,6 +619,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-confidence", type=float, default=0.35)
     parser.add_argument("--box-padding", type=int, default=0)
     parser.add_argument(
+        "--frame-nms-iou-threshold",
+        type=float,
+        default=None,
+        help="Optional per-frame, per-label NMS IoU threshold to suppress duplicate detections before AOI tracking.",
+    )
+    parser.add_argument(
+        "--normalize-labels-to-prompt-vocab",
+        action="store_true",
+        help="Canonicalize detector labels to the closest label phrase present in the original prompt.",
+    )
+    parser.add_argument(
         "--max-track-frame-gap",
         type=int,
         default=20,
@@ -674,6 +689,8 @@ def main() -> None:
         include_labels=args.include_labels,
         min_confidence=args.min_confidence,
         box_padding=args.box_padding,
+        frame_nms_iou_threshold=args.frame_nms_iou_threshold,
+        normalize_labels_to_prompt_vocab=args.normalize_labels_to_prompt_vocab,
         max_track_frame_gap=args.max_track_frame_gap,
         min_track_iou=args.min_track_iou,
         max_track_center_distance_ratio=args.max_track_center_distance_ratio,

@@ -64,6 +64,24 @@ If the purpose of the preprocessing run is to refresh the current `Windows x64` 
 
 - `docs/phase2/windows-build-refresh-runbook.md`
 
+## Frozen pilot corpus
+
+The frozen pilot corpus used in the participant study is:
+
+- `test1Camera360`
+- `test2Camera360`
+- `test3Lions360`
+
+The prompt preset for that corpus is stored in:
+
+- `data/promts/3videosPromt.json`
+
+Current frozen prompts:
+
+- `test1Camera360` -> `person. face. laptop. screen.`
+- `test2Camera360` -> `person. face. bottle. plate.`
+- `test3Lions360` -> `lion. gazelle.`
+
 ## Scripts
 
 ### 1. Extract frames
@@ -119,7 +137,7 @@ The GUI lets you:
 - follow stage progress and useful logs in real time
 - see whether the pipeline is running on `cpu` or `cuda`
 - see the resolved output folders before running anything
-- auto-fill the prompt when the selected video stem matches an entry in `data/promts/5videosPromt.json`
+- auto-fill the prompt when the selected video stem matches an entry in the prompt preset JSONs under `data/promts/`, including `3videosPromt.json` for the pilot corpus
 
 If you want a root-level launcher instead of calling Python manually, use:
 
@@ -207,11 +225,12 @@ That per-frame layout is now consumed by the current Unity runtime loader keyed 
 
 ## Prompt presets
 
-The repository now keeps a simple per-video prompt mapping file in:
+The repository now keeps simple per-video prompt mapping files in:
 
+- `data/promts/3videosPromt.json`
 - `data/promts/5videosPromt.json`
 
 This mapping is used in two places:
 
 - the benchmark script through `--video-prompt` / `--video-prompt-file`
-- the preprocessing GUI, which auto-loads the matching prompt when the selected video stem is present in that JSON
+- the preprocessing GUI, which auto-loads the matching prompt when the selected video stem is present in those JSON files
