@@ -64,6 +64,24 @@ If the purpose of the preprocessing run is to refresh the current `Windows x64` 
 
 - `docs/phase2/windows-build-refresh-runbook.md`
 
+## Frozen pilot corpus
+
+The frozen pilot corpus used in the participant study is:
+
+- `test1Camera360`
+- `test2Camera360`
+- `test3Lions360`
+
+The prompt preset for that corpus is stored in:
+
+- `data/promts/3videosPromt.json`
+
+Current frozen prompts:
+
+- `test1Camera360` -> `person. face. laptop. screen.`
+- `test2Camera360` -> `person. face. bottle. plate.`
+- `test3Lions360` -> `lion. gazelle.`
+
 ## Scripts
 
 ### 1. Extract frames

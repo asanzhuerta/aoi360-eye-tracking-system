@@ -1,219 +1,116 @@
 # AOI360 Eye Tracking System
 
-Research system for 360 video attention analysis with:
-- offline AOI generation in Python
-- detector benchmarking in Python
-- experimental runtime in Unity
-- post-hoc analytics in Python
+Research system for dynamic area-of-interest (AOI) analysis in 360 video, split
+into three practical phases:
 
-## Current project status
+- `Phase 1`: offline AOI preprocessing in Python
+- `Phase 2`: Unity/OpenXR runtime for VR playback, gaze capture, AOI lookup, and CSV export
+- `Phase 3`: post-processing and analytics over the runtime exports
 
-The repository is now organized around three practical phases:
+## Current delivery state
 
-- `Phase 1` -> offline AOI preprocessing in Python
-- `Phase 2` -> Unity runtime playback, gaze capture, AOI lookup, and CSV export
-- `Phase 3` -> post-processing and analytics over the Unity runtime exports
+The repository is now in a usable end-to-end state for the pilot workflow:
 
-## Architecture
+- a frozen three-video pilot corpus is supported in the runtime
+- Unity exports fixation-level CSVs into `data/exports/csv/`
+- Phase 3 generates participant-, session-, video-, AOI-, and transition-level summaries
+- the pilot paper and participant materials live under `docs/`
 
-### 1. Offline pipeline
-Python pipeline for:
-- frame extraction
-- 360 projection handling
-- AOI detection from prompts
-- segmentation and tracking
-- AOI ID map export
-- metadata export
+Frozen pilot stimuli:
 
-### 2. Runtime
-Unity runtime for:
-- 360 video playback
-- OpenXR eye gaze capture
-- HTC VIVE OpenXR eye tracker fallback
-- spherical gaze mapping
-- AOI lookup on equirectangular ID maps
-- AOI overlay rendering on the 360 sphere
-- fixation visualization and trail rendering
-- fixation-based CSV logging into `data/exports/csv/` when the repo root is available
+- `test1Camera360`
+- `test2Camera360`
+- `test3Lions360`
 
-### 3. Analytics
-Python post-hoc analysis for:
-- fixation detection
-- TFF
-- FD
-- TFD
-- FC
-- FB
-- validation comparisons between manual and automatic AOIs
+## Repository map
 
-## Where the install/run manuals live
+- `python/offline/` -> Phase 1 preprocessing and AOI asset generation
+- `unity/AOI360Runtime/` -> Phase 2 Unity runtime
+- `python/analytics/` -> Phase 3 analytics package
+- `data/` -> input videos, processed assets, runtime exports, and analytics outputs
+- `docs/phase2/` -> Unity/runtime operational documentation
+- `docs/pilot_latex/` -> consent form and operator sheet for pilot sessions
+- `docs/latex/` -> scientific manuscript workspace
+- `experiments/model_benchmark/` -> detector benchmark material
 
-The install and execution manuals are now split by phase:
+## Recommended end-to-end workflow
 
-- `Phase 1` manual: `python/offline/README.md`
-  - installation: `Phase 1 manual: installation`
-  - execution: `Phase 1 manual: execution`
-- `Phase 2` manual: `docs/phase2/README.md`
-  - installation: `Phase 2 manual: installation`
-  - execution: `Phase 2 manual: execution`
-- `Phase 3` manual: `python/analytics/README.md`
-  - installation: `Phase 3 manual: installation`
-  - execution: `Phase 3 manual: execution`
+1. Add or update a source video under `data/input_videos/`.
+2. Regenerate its AOI assets with the offline pipeline in `python/offline/`.
+3. Build or refresh the Unity player under `build/windows/AOI360Runtime/`.
+4. Run the VR session and collect CSVs in `data/exports/csv/`.
+5. Run Phase 3 analytics over those CSVs.
+6. Optionally generate the HTML AOI explorer for inspection.
 
-If you want the direct desktop launcher for the preprocessing GUI, use:
+## Where to start
 
-- `Launch_AOI360_Preprocess_GUI.bat`
+Phase-specific manuals:
 
-## Current recommended workflow
+- Phase 1: `python/offline/README.md`
+- Phase 2: `docs/phase2/README.md`
+- Phase 3: `python/analytics/README.md`
 
-The current practical workflow across the repository is:
+Operational runbooks:
 
-1. add or update one source video under `data/input_videos/`
-2. rebuild its AOI assets with the offline Python pipeline in `python/offline/`
-3. rebuild the repository-local `Windows x64` player from Unity with `Tools > AOI > Build Windows x64 Player`
-4. run the VR session from `build/windows/AOI360Runtime/AOI360Runtime.exe`
-5. collect runtime CSV exports from `data/exports/csv/`
+- add new video and refresh Windows build: `docs/phase2/windows-build-refresh-runbook.md`
+- review runtime behavior and validation flow: `docs/phase2/runtime-unity.md`
 
-Use these entry points depending on what you need:
+Pilot materials:
 
-- preprocessing and AOI asset generation -> `python/offline/README.md`
-- Unity runtime and Windows build flow -> `docs/phase2/README.md`
-- refresh runbook for new videos -> `docs/phase2/windows-build-refresh-runbook.md`
-- post-processing and analytics -> `python/analytics/README.md`
+- consent form and print-ready PDFs: `docs/pilot_latex/README.md`
 
-## Phase 2 goal
+## Phase 2 runtime summary
 
-Build a stable end-to-end prototype with:
-- one 360 video in Unity
-- manual AOI maps rendered as an overlay on the 360 scene
-- real eye tracking through OpenXR and HTC VIVE
-- spherical gaze mapping and AOI lookup
-- fixation commits every 250 ms
-- fixation trail visualization in VR
-- fixation-based CSV export
-- a documented AOI data contract for future Grounding DINO integration
+The current Unity runtime supports:
 
-## Current Phase 2 status
+- 360 video playback in VR
+- OpenXR eye gaze capture with HTC VIVE fallback
+- spherical gaze mapping to equirectangular coordinates
+- exact-color AOI lookup from precomputed ID maps
+- optional AOI overlay rendering for validation
+- fixation-level CSV export with pupil diameters when available
 
-The active Unity scene is `Phase2_360Playback_VR_sampleRIG`.
+Repository-local Windows build:
 
-Phase 2 currently includes:
-- 360 video playback on the skybox
-- AOI overlay rendering from a runtime-generated transparent sphere
-- AOI lookup through exact-color metadata maps exported by the offline pipeline
-- fixation detection and commit cadence at `250 ms`
-- visible fixation hit marker plus a capped trail of previous fixations
-- CSV export of fixation events, AOI hits, and pupil diameters when HTC eye tracker data is available
-- runtime debug UI showing AOI state, tracking source, and pupil data
-- per-frame AOI sequence loading from `StreamingAssets`, reset-safe loop handling, and projection alignment through runtime calibration plus optional baked offline yaw offsets
-- runtime performance tuning for standalone VR through lighter AOI maps, cached AOI pixel lookup, a binary AOI runtime pack, and frame-drop-friendly video playback
-- fallback from problematic `.mkv` sources to `.mp4` / `.mov` / `.webm` when matching alternatives exist
-- projection normalization for non-2:1 source videos so wide clips such as `3840x2160` can still be tested on the 360 sphere
-- repository-first stimulus discovery from `data/input_videos` and `data/processed`, with `StreamingAssets` kept as the packaging path for later builds
-- controller material repair in runtime so Focus 3 controller prefabs no longer render as magenta under the current URP setup
-- CSV export routed to `data/exports/csv/` when the runtime can resolve the repository root
-- repository-local Windows builds through `Tools > AOI > Build Windows x64 Player`, keeping the `.exe` under `build/windows/` so the runtime preserves the same repo-backed CSV export flow
+- `build/windows/AOI360Runtime/AOI360Runtime.exe`
 
-## AOI map contract
+## Phase 3 outputs
 
-The runtime now supports a color-driven AOI contract intended for the offline Python pipeline:
+The analytics layer writes timestamped folders under `data/exports/analytics/`
+and currently exports:
 
-- AOI texture: exact-color ID map
-- Metadata file: `StreamingAssets/AOIMaps/<map_name>_metadata.json`
-- Metadata fields:
-  - `id`
-  - `name`
-  - `prompt`
-  - `category`
-  - `parentId`
-  - `color`
+- `runtime_rows_normalized.csv`
+- `runtime_source_file_summary.csv`
+- `runtime_session_summary.csv`
+- `runtime_session_quality.csv`
+- `runtime_session_inclusion.csv`
+- `runtime_participant_summary.csv`
+- `runtime_video_summary.csv`
+- `runtime_aoi_summary.csv`
+- `runtime_video_aoi_summary.csv`
+- `runtime_transition_summary.csv`
+- `runtime_summary_snapshot.json`
 
-Example:
+For AOI-level inspection, the repository also supports a static HTML viewer built
+from `runtime_aoi_summary.csv`.
 
-```json
-{
-  "video": "sample360.mp4",
-  "fps": 30,
-  "idMapResolution": [1920, 960],
-  "aois": [
-    {
-      "id": 17,
-      "name": "product_box_left",
-      "prompt": "product box",
-      "category": "product/box",
-      "parentId": 0,
-      "color": "#00FF00"
-    }
-  ]
-}
-```
+## Pilot reference outputs
 
-This lets Unity resolve AOIs by exact pixel color while preserving semantic metadata that can later be produced by Grounding DINO, segmentation, and tracking.
+The completed eight-participant pilot currently lives under:
 
-## Repository layout
+- `data/exports/analytics/20260525_pilot_P01_P08_clean/`
 
-- `unity/AOI360Runtime` -> Unity project
-- `python/offline` -> AOI generation pipeline
-- `python/analytics` -> metric analysis
-- `data` -> input and output data
-- `docs` -> architecture, ADRs, notes, and phase documentation
-- `experiments` -> phase-specific experiments
+Key files from that run:
 
-## Documentation
+- `runtime_summary_snapshot.json`
+- `runtime_participant_summary.csv`
+- `runtime_video_summary.csv`
+- `runtime_aoi_summary.csv`
+- `runtime_transition_summary.csv`
+- `runtime_aoi_summary_viewer.html`
 
-See the Phase 2 documentation for implementation details:
-- `docs/phase2/README.md`
-- `docs/phase2/runtime-unity.md`
-- `docs/phase2/aoi-data-contract.md`
-- `docs/phase2/csv-schema.md`
-- `docs/phase2/validation-checklist.md`
-- `docs/phase2/windows-build-refresh-runbook.md`
+## Notes
 
-## Offline Python quick start
-
-The current offline branch supports a simple AOI authoring loop:
-
-1. extract sparse frames from `data/input_videos/video_360.mp4`
-2. run an open-vocabulary detector over those frames
-3. export a Unity-compatible AOI map PNG plus metadata JSON
-4. optionally export a full per-frame AOI sequence plus manifest for Unity runtime loading
-5. rebuild the full runtime-ready asset set in one command or from the preprocessing GUI
-
-The offline pipeline now also supports:
-
-- detector selection between Grounding DINO and YOLO-World while keeping the same downstream AOI/Unity contract
-- reproducible timing benchmarks for Grounding DINO vs YOLO-World over extracted 360-video frames
-- per-video prompt overrides for detector benchmarking through `data/promts/5videosPromt.json`
-- CUDA-aware preprocessing when a compatible NVIDIA GPU is available
-- automatic preprocessing defaults tuned to the detected runtime (`cpu` or `cuda`)
-- stable AOI identities across sparse keyframes, so the same tracked AOI keeps the same color and id over time
-- a more compact desktop preprocessing GUI that fits typical laptop screens better
-- automatic prompt autofill in the GUI when the selected video matches an entry in `data/promts/5videosPromt.json`
-- a default baked yaw offset of `0` degrees, with any extra alignment handled explicitly instead of hidden in the export defaults
-
-Reference commands and options live in:
-
-- `python/offline/README.md`
-- `experiments/model_benchmark/README.md`
-
-## Post-processing quick start
-
-The analytics package now includes a first post-processing pass for the fixation-based CSV exports produced by Unity.
-
-It can:
-
-- load one or more runtime CSVs
-- read runtime CSVs from `data/exports/csv/` by default while keeping analytics outputs under `data/exports/analytics/`
-- normalize and validate the export schema
-- estimate the effective fixation cadence per session
-- summarize session quality and valid-tracking coverage
-- compute AOI-level dwell time, first-fixation timing, visit counts, and normalized time-share metrics
-- aggregate session quality by participant, by video, and by `video x AOI`
-- estimate AOI-to-AOI transition counts from the ordered fixation timeline
-- enrich AOI ids with names/categories from the exported manifests when available
-- reapply two different AOI-manifest roots over the same runtime CSVs so manual and automatic AOIs can be compared without repeating the Unity session
-
-Reference commands and outputs live in:
-
-- `python/analytics/README.md`
-- `docs/unity/manual-test-plan.md`
+- `docs/latex/` may be a local linked paper workspace depending on the machine setup.
+- The current Phase 3 metrics are derived from the runtime fixation-level export,
+  not from a continuous raw gaze sample stream.

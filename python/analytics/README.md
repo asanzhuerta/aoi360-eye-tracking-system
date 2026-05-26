@@ -1,30 +1,33 @@
 # aoi360_analytics
 
-Analytics package for:
-- fixation detection
-- AOI metrics
-- validation against manual annotations
-- exports to CSV / Parquet
+Phase 3 analytics package for the AOI360 project.
+
+It operates over the fixation-level CSV exports produced by the Unity runtime
+and computes the main descriptive outputs used in the pilot and the paper.
 
 ## Current scope
 
-The current branch starts the post-processing stage with a first practical pipeline for the fixation-based CSV logs exported by Unity.
+The current package supports:
 
-It currently supports:
-
-1. loading one or more runtime CSV files
-2. consuming Unity runtime CSVs from `data/exports/csv/` by default
-3. still filtering out non-runtime CSVs automatically when a broader export folder also contains benchmarks or previous analytics outputs
-4. validating the expected export schema
-5. estimating the effective fixation cadence per session/video
-6. producing a practical quality report per session and per source CSV file
+1. loading one or more Unity runtime CSV files
+2. discovering runtime CSVs from `data/exports/csv/`
+3. filtering out non-runtime CSVs automatically when broader export folders also contain benchmarks or previous analytics outputs
+4. validating the expected CSV schema
+5. estimating the effective fixation cadence per `participant x session x video`
+6. producing practical quality and inclusion reports
 7. computing AOI-level dwell time, first-fixation timing, visit counts, and normalized time-share metrics
-8. aggregating quality and AOI engagement metrics by participant, by video, and by `video x AOI`
-9. estimating AOI-to-AOI transition counts from the ordered fixation timeline
-10. enriching AOI ids with names/categories from the AOI sequence manifests when they are available
-11. reapplying two different AOI-manifest roots over the same Unity runtime logs in order to compare `manual vs automatic` AOI assignments without re-recording the session
+8. aggregating metrics by participant, by video, and by `video x AOI`
+9. estimating AOI-to-AOI transitions from the ordered fixation timeline
+10. enriching AOI ids with names/categories from the AOI sequence manifests when available
+11. comparing two AOI sources over the same runtime gaze timeline (`manual` vs `automatic`)
+12. generating a static HTML viewer for AOI-level inspection
 
-## Phase 3 manual: installation
+Important note:
+
+- the current input is the runtime fixation-level export, not a continuous raw gaze sample stream
+- literature metrics such as `TFF`, `FD`, `TFD`, `FC`, and visits are therefore operationalised from fixation-level rows
+
+## Installation
 
 Recommended:
 
@@ -32,21 +35,21 @@ Recommended:
 pip install -e python/analytics
 ```
 
-## Phase 3 manual: execution
+Alternative:
 
-The expected Unity input location is:
+```bash
+pip install -r python/analytics/requirements.txt
+```
 
-- `data/exports/csv/`
+## Main scripts
 
-That folder is now the repository-root handoff between the Unity runtime and the analytics stage whenever the runtime can resolve the repo root.
+- `python/analytics/scripts/analyze_runtime_exports.py`
+- `python/analytics/scripts/compare_runtime_aoi_sources.py`
+- `python/analytics/scripts/build_runtime_aoi_html_report.py`
+- `python/analytics/scripts/normalize_runtime_participant_ids.py`
+- `python/analytics/scripts/build_phase3_stimulus_aoi_tables.py`
 
-If the Windows build must be refreshed because a new video was added or its AOIs were regenerated, follow the operational runbook first:
-
-- `docs/phase2/windows-build-refresh-runbook.md`
-
-That runbook ends exactly at the Phase 3 handoff point: fresh runtime CSVs inside `data/exports/csv/`.
-
-## Script
+## Analyze runtime exports
 
 Analyze one directory of Unity runtime exports:
 
@@ -60,46 +63,82 @@ Analyze only sessions that pass the AOI-usable quality gate:
 python python/analytics/scripts/analyze_runtime_exports.py --input-dir data/exports/csv --manifest-root data/processed/metadata --session-filter aoi_usable
 ```
 
+Analyze explicit CSV files:
+
+```bash
+python python/analytics/scripts/analyze_runtime_exports.py --input-csv data/exports/csv/session_01.csv --input-csv data/exports/csv/session_02.csv --manifest-root data/processed/metadata
+```
+
 Available session filters:
 
 - `all` -> include every discovered runtime session
 - `tracking_usable` -> keep only sessions usable for tracking analysis
 - `aoi_usable` -> keep only sessions usable for AOI analysis
 
-Analyze explicit CSV files:
-
-```bash
-python python/analytics/scripts/analyze_runtime_exports.py --input-csv data/exports/csv/session_01.csv --input-csv data/exports/csv/session_02.csv
-```
+## Compare two AOI sources
 
 Compare one set of runtime CSVs against two AOI sources:
 
 ```bash
-python python/analytics/scripts/compare_runtime_aoi_sources.py \
-  --input-dir data/exports/csv \
-  --manual-manifest-root data/manual_gt/metadata \
-  --automatic-manifest-root data/processed/metadata \
+python python/analytics/scripts/compare_runtime_aoi_sources.py ^
+  --input-dir data/exports/csv ^
+  --manual-manifest-root data/manual_gt/metadata ^
+  --automatic-manifest-root data/processed/metadata ^
   --match-field aoi_category
 ```
 
 Compare only sessions that are AOI-usable in both sources:
 
 ```bash
-python python/analytics/scripts/compare_runtime_aoi_sources.py \
-  --input-dir data/exports/csv \
-  --manual-manifest-root data/manual_gt/metadata \
-  --automatic-manifest-root data/processed/metadata \
-  --match-field aoi_category \
+python python/analytics/scripts/compare_runtime_aoi_sources.py ^
+  --input-dir data/exports/csv ^
+  --manual-manifest-root data/manual_gt/metadata ^
+  --automatic-manifest-root data/processed/metadata ^
+  --match-field aoi_category ^
   --session-filter aoi_usable
 ```
 
-Comparison session filters:
+Recommended semantic comparison keys:
 
-- `all` -> compare every discovered runtime session
-- `tracking_usable` -> compare only sessions that pass the tracking-quality gate
-- `aoi_usable` -> compare only sessions that are AOI-usable in both the `manual` and `automatic` sources
+- `aoi_category` -> safest default when ids differ
+- `aoi_name` -> useful when both sources share stable AOI names
+- `aoi_id` -> only when both sources intentionally reuse the same numeric AOI ids
 
-For a quick self-check of the comparison pipeline before the manual package is frozen, both roots can temporarily point to the same manifest folder. In that case, the session-alignment and confusion outputs should converge toward perfect agreement.
+## Build the HTML AOI viewer
+
+Generate a static HTML explorer from `runtime_aoi_summary.csv`:
+
+```bash
+python python/analytics/scripts/build_runtime_aoi_html_report.py --input-csv data/exports/analytics/<timestamp>/runtime_aoi_summary.csv
+```
+
+Explicit output path:
+
+```bash
+python python/analytics/scripts/build_runtime_aoi_html_report.py --input-csv data/exports/analytics/<timestamp>/runtime_aoi_summary.csv --output-html data/exports/analytics/<timestamp>/runtime_aoi_summary_viewer.html --title "AOI360 Phase 3 Explorer"
+```
+
+The HTML viewer supports:
+
+- filter by participant
+- filter by experiment/session
+- filter by stimulus/video
+- filter by AOI
+- free-text search
+- direct inspection of `FC`, derived `FD`, `TFD`, `TFF`, visits, dwell shares, and confidence
+
+Normalize pilot participant IDs so the analytics outputs use `P01`...`P08`
+instead of the internal runtime IDs:
+
+```bash
+python python/analytics/scripts/normalize_runtime_participant_ids.py --input-root data/exports/csv
+```
+
+Build the grouped `stimulus x AOI` Phase 3 means used in the manuscript:
+
+```bash
+python python/analytics/scripts/build_phase3_stimulus_aoi_tables.py --input-csv data/exports/analytics/<timestamp>/runtime_aoi_summary.csv --output-csv data/exports/analytics/<timestamp>/runtime_video_aoi_mean_metrics.csv
+```
 
 ## Outputs
 
@@ -113,14 +152,15 @@ The analytics script writes one timestamped folder under `data/exports/analytics
 - `runtime_participant_summary.csv`
 - `runtime_video_summary.csv`
 - `runtime_aoi_summary.csv`
+- `runtime_video_aoi_mean_metrics.csv`
 - `runtime_video_aoi_summary.csv`
 - `runtime_transition_summary.csv`
 - `runtime_summary_snapshot.json`
 
 The comparison script writes one timestamped folder under `data/exports/analytics/source_comparison/` with:
 
-- `manual/` -> the full analytics export for the manual AOI source
-- `automatic/` -> the full analytics export for the automatic AOI source
+- `manual/`
+- `automatic/`
 - `comparison_rows_reassigned.csv`
 - `comparison_session_inclusion.csv`
 - `comparison_session_alignment.csv`
@@ -133,53 +173,48 @@ The comparison script writes one timestamped folder under `data/exports/analytic
 
 ## Metric notes
 
-The current session-quality layer is heuristic on purpose: it gives a fast first pass over whether a run is usable for tracking analysis and whether it is usable for AOI analysis.
+Session-quality layer:
 
-The new `--session-filter` option lets the downstream aggregation layer follow that quality gate directly instead of only reporting it. The exported `runtime_session_inclusion.csv` file makes the inclusion/exclusion decision explicit for each participant/session/video run.
+- `runtime_session_quality.csv` reports quality flags and issues per run
+- `runtime_session_inclusion.csv` makes the inclusion/exclusion decision explicit for each chosen `--session-filter`
 
-The current AOI summary is aligned with the Unity Phase 2 export and now adds normalized metrics:
+Main AOI metrics:
 
-- `fixation_steps`: number of valid fixation rows assigned to the AOI
-- `dwell_time_ms`: `fixation_steps * fixation_step_ms_estimate`
-- `time_to_first_fixation_ms`: first valid timestamp assigned to the AOI
-- `visit_count`: number of AOI re-entries estimated from the ordered fixation timeline
-- `dwell_share_of_valid_time`: fraction of valid tracked time spent on the AOI
-- `dwell_share_of_assigned_time`: fraction of AOI-assigned time spent on the AOI
-- `fixation_steps_per_minute_valid`: fixation cadence over valid tracked time
-- `visit_count_per_minute_valid`: AOI revisit rate normalized by valid tracked time
-- `time_to_first_fixation_ratio`: first-fixation timing normalized by estimated session duration
+- `fixation_steps` -> fixation count proxy (`FC`)
+- `dwell_time_ms` -> total fixation duration (`TFD`)
+- `time_to_first_fixation_ms` -> time to first fixation (`TFF`)
+- `visit_count` -> AOI revisit count
+- `dwell_share_of_valid_time` -> share of valid tracked time spent on the AOI
+- `dwell_share_of_assigned_time` -> share of AOI-assigned time spent on the AOI
 
-The transition summary is derived from ordered valid fixation rows:
+Grouped AOI means:
 
-- `from_aoi_id` and `to_aoi_id`: AOIs involved in the transition
-- `transition_count`: number of observed AOI changes within one participant/session/video run
-- `mean_transition_gap_ms`: average temporal gap between the source fixation and the next AOI fixation
+- `runtime_video_aoi_mean_metrics.csv` aggregates the detailed AOI rows by `stimulus x AOI`
+- `mean_fc` -> mean fixation count over runs in which the AOI was visited
+- `fd_ms` -> derived fixation duration from grouped dwell time and grouped fixation count
+- `mean_tfd_s` -> mean total fixation duration per visited run
+- `mean_tff_s` -> mean time to first fixation per visited run
+- `mean_visits` -> mean AOI visit count per visited run
 
-The `runtime_video_aoi_summary.csv` table is the main comparative table for the next phase of the project:
+Transition metrics:
 
-- it aggregates AOI engagement by `video_id` and `aoi_id`
-- it reports how often each AOI appears across runs
-- it keeps normalized dwell / visit / first-fixation metrics that can later be compared between manual and automatic AOIs
+- `from_aoi_id` and `to_aoi_id`
+- `transition_count`
+- `mean_transition_gap_ms`
 
-The comparison layer reuses the same runtime rows and recomputes AOI ids from two manifest bundles:
+## Pilot reference
 
-- one bundle is treated as the `manual` reference source
-- one bundle is treated as the `automatic` source under evaluation
-- both bundles are applied to the same `video_id`, `frame_index`, and `uv` timeline exported by Unity
+The completed eight-participant pilot currently has a clean analytics export at:
 
-This lets the project answer the downstream methodological question directly: whether changing the AOI source changes the gaze metrics that would later be interpreted in the study.
+- `data/exports/analytics/20260525_pilot_P01_P08_clean/`
 
-The new comparison-level `--session-filter` option lets the project exclude weak sessions before the manual-vs-automatic agreement step. The exported `comparison_session_inclusion.csv` table makes that gate explicit and records whether a session was excluded for tracking quality or because one or both AOI sources were not AOI-usable.
+Key files from that run:
 
-The semantic comparison key is configurable through `--match-field`:
-
-- `aoi_category` is the safest default when manual and automatic AOI ids are not directly aligned
-- `aoi_name` is useful when both pipelines share a stable AOI naming convention
-- `aoi_id` is only meaningful when both sources intentionally reuse the same numeric AOI ids
-
-The comparison pipeline supports two AOI-frame backends:
-
-- the packed RGB24 runtime blob, which matches the Unity runtime path
-- per-frame PNG ID maps as a fallback, which keeps the workflow compatible with future manual annotations that have not been packed yet
-
-This is the starting point for the post-processing phase, not the final analytics model. It is designed to be stable enough to test the end-to-end workflow as soon as real Unity exports are available, while already exposing the main descriptive tables needed to evaluate session quality, AOI engagement, and navigation patterns.
+- `runtime_summary_snapshot.json`
+- `runtime_participant_summary.csv`
+- `runtime_video_summary.csv`
+- `runtime_aoi_summary.csv`
+- `runtime_video_aoi_mean_metrics.csv`
+- `runtime_video_aoi_summary.csv`
+- `runtime_transition_summary.csv`
+- `runtime_aoi_summary_viewer.html`
