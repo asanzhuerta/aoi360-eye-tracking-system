@@ -7,41 +7,61 @@ import json
 from pathlib import Path
 
 
+def _parse_float(value: str | None, default: float = -1.0) -> float:
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_int(value: str | None, default: int = -1) -> int:
+    try:
+        if value is None or value == "":
+            return default
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
 def _read_rows(csv_path: Path) -> list[dict[str, object]]:
     with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         rows: list[dict[str, object]] = []
         for raw_row in reader:
-            fixation_steps = int(float(raw_row["fixation_steps"]))
-            dwell_time_ms = float(raw_row["dwell_time_ms"])
-            time_to_first_fixation_ms = float(raw_row["time_to_first_fixation_ms"])
-            visit_count = int(float(raw_row["visit_count"]))
-            mean_confidence = float(raw_row["mean_aoi_confidence"])
-            dwell_share_valid = float(raw_row["dwell_share_of_valid_time"])
-            dwell_share_assigned = float(raw_row["dwell_share_of_assigned_time"])
-            fixation_step_ms_estimate = float(raw_row["fixation_step_ms_estimate"])
+            fixation_steps = _parse_int(raw_row.get("fixation_steps"))
+            dwell_time_ms = _parse_float(raw_row.get("dwell_time_ms"))
+            time_to_first_fixation_ms = _parse_float(raw_row.get("time_to_first_fixation_ms"))
+            visit_count = _parse_int(raw_row.get("visit_count"))
+            fb_count = _parse_int(raw_row.get("fb_count"))
+            was_visited = _parse_int(raw_row.get("was_visited"), default=1)
+            has_revisits = _parse_int(raw_row.get("has_revisits"), default=0)
+
+            fd_ms = -1.0
+            if fixation_steps > 0 and dwell_time_ms >= 0:
+                fd_ms = round(dwell_time_ms / fixation_steps, 3)
 
             rows.append(
                 {
-                    "participant_id": raw_row["participant_id"],
-                    "session_id": raw_row["session_id"],
-                    "video_id": raw_row["video_id"],
-                    "aoi_id": int(float(raw_row["aoi_id"])),
+                    "participant_id": raw_row.get("participant_id", ""),
+                    "video_id": raw_row.get("video_id", ""),
+                    "aoi_id": _parse_int(raw_row.get("aoi_id")),
                     "aoi_name": raw_row.get("aoi_name", ""),
                     "aoi_category": raw_row.get("aoi_category", ""),
                     "aoi_prompt": raw_row.get("aoi_prompt", ""),
                     "aoi_color": raw_row.get("aoi_color", ""),
+                    "was_visited": was_visited,
+                    "fb_count": fb_count,
                     "fixation_steps": fixation_steps,
-                    "visit_count": visit_count,
+                    "fc": fixation_steps,
                     "dwell_time_ms": dwell_time_ms,
-                    "dwell_time_s": round(dwell_time_ms / 1000.0, 3),
+                    "tfd_ms": dwell_time_ms,
                     "time_to_first_fixation_ms": time_to_first_fixation_ms,
-                    "time_to_first_fixation_s": round(time_to_first_fixation_ms / 1000.0, 3),
-                    "fd_ms": round((dwell_time_ms / fixation_steps), 3) if fixation_steps else 0.0,
-                    "mean_aoi_confidence": round(mean_confidence, 4),
-                    "dwell_share_of_valid_time": round(dwell_share_valid, 4),
-                    "dwell_share_of_assigned_time": round(dwell_share_assigned, 4),
-                    "fixation_step_ms_estimate": round(fixation_step_ms_estimate, 3),
+                    "tff_ms": time_to_first_fixation_ms,
+                    "fd_ms": fd_ms,
+                    "visit_count": visit_count,
+                    "has_revisits": 1 if has_revisits == 1 else 0,
                 }
             )
 
@@ -67,6 +87,8 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
       --line: #d8cfbf;
       --accent: #2f6fed;
       --accent-soft: #dfe9ff;
+      --pre: #f3f8ff;
+      --sustained: #faf2e5;
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -76,17 +98,17 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
       color: var(--ink);
     }}
     .wrap {{
-      max-width: 1400px;
+      max-width: 1480px;
       margin: 0 auto;
       padding: 28px 24px 40px;
     }}
-    .hero {{
+    .hero, .filters, .cards, .table-panel {{
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 18px;
-      padding: 24px;
-      box-shadow: 0 12px 30px rgba(39, 32, 18, 0.06);
-      margin-bottom: 20px;
+      padding: 20px;
+      box-shadow: 0 12px 30px rgba(39, 32, 18, 0.05);
+      margin-bottom: 18px;
     }}
     h1 {{
       margin: 0 0 10px;
@@ -97,14 +119,6 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
       margin: 0;
       color: var(--muted);
       font-size: 15px;
-    }}
-    .filters, .cards, .table-panel {{
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 18px;
-      box-shadow: 0 12px 30px rgba(39, 32, 18, 0.05);
-      margin-bottom: 18px;
     }}
     .filters-grid {{
       display: grid;
@@ -129,16 +143,49 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
       color: var(--ink);
       font: inherit;
     }}
+    .cards-top {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }}
+    .cards-groups {{
+      display: grid;
+      grid-template-columns: 1fr 1.6fr;
+      gap: 12px;
+    }}
+    .group {{
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+    }}
+    .group.pre {{
+      background: var(--pre);
+    }}
+    .group.sustained {{
+      background: var(--sustained);
+    }}
+    .group-title {{
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 800;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }}
     .cards-grid {{
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
+    }}
+    .cards-grid.wide {{
+      grid-template-columns: repeat(5, minmax(0, 1fr));
     }}
     .card {{
       border: 1px solid var(--line);
       border-radius: 14px;
       padding: 14px;
-      background: linear-gradient(180deg, #fffefb 0%, #faf6ee 100%);
+      background: rgba(255, 255, 255, 0.78);
     }}
     .card .k {{
       font-size: 12px;
@@ -149,7 +196,7 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
       font-weight: 700;
     }}
     .card .v {{
-      font-size: 26px;
+      font-size: 24px;
       font-weight: 800;
     }}
     .toolbar {{
@@ -172,7 +219,7 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
     table {{
       width: 100%;
       border-collapse: collapse;
-      min-width: 1180px;
+      min-width: 1320px;
     }}
     th, td {{
       padding: 10px 12px;
@@ -181,15 +228,25 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
       font-size: 13px;
       white-space: nowrap;
     }}
-    th {{
+    thead th {{
       position: sticky;
       top: 0;
-      background: #fcf7ef;
       z-index: 1;
+      background: #fcf7ef;
       font-size: 12px;
       text-transform: uppercase;
       letter-spacing: 0.04em;
       color: var(--muted);
+    }}
+    thead tr.group-row th {{
+      background: #f6efe2;
+      text-align: center;
+    }}
+    thead tr.group-row th.pre-head {{
+      background: #eaf2ff;
+    }}
+    thead tr.group-row th.sustained-head {{
+      background: #f7ecd9;
     }}
     tbody tr:hover {{
       background: #f7fbff;
@@ -222,14 +279,31 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
       color: var(--muted);
       font-weight: 600;
     }}
+    .checkbox-cell {{
+      text-align: center;
+    }}
+    .checkbox-cell input {{
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+    }}
+    .neg {{
+      color: #8f8375;
+    }}
     @media (max-width: 1080px) {{
-      .filters-grid, .cards-grid {{
+      .filters-grid, .cards-top {{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }}
+      .cards-groups {{
+        grid-template-columns: 1fr;
+      }}
+      .cards-grid.wide {{
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }}
     }}
     @media (max-width: 640px) {{
       .wrap {{ padding: 18px 14px 28px; }}
-      .filters-grid, .cards-grid {{
+      .filters-grid, .cards-top, .cards-grid, .cards-grid.wide {{
         grid-template-columns: 1fr;
       }}
       h1 {{ font-size: 24px; }}
@@ -240,7 +314,7 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
   <div class="wrap">
     <section class="hero">
       <h1>{title_escaped}</h1>
-      <p class="subtitle">Visor HTML de Phase 3 generado desde <code>{source_csv_escaped}</code>. Filtra por participante, estímulo y AOI para inspeccionar TFF, FD, TFD, FC y visitas.</p>
+      <p class="subtitle">Visor HTML de Phase 3 generado desde <code>{source_csv_escaped}</code>. Las AOI no visitadas se muestran con <code>-1</code> y las metricas se ordenan como pre-atentivas (izquierda) y sostenidas (derecha).</p>
     </section>
 
     <section class="filters">
@@ -250,7 +324,7 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
           <select id="participantFilter"></select>
         </div>
         <div>
-          <label for="videoFilter">Estímulo</label>
+          <label for="videoFilter">Estimulo</label>
           <select id="videoFilter"></select>
         </div>
         <div>
@@ -265,37 +339,57 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
     </section>
 
     <section class="cards">
-      <div class="cards-grid">
+      <div class="cards-top">
         <div class="card"><div class="k">Filas visibles</div><div id="cardRows" class="v">0</div></div>
         <div class="card"><div class="k">Participantes</div><div id="cardParticipants" class="v">0</div></div>
-        <div class="card"><div class="k">Estímulos</div><div id="cardVideos" class="v">0</div></div>
+        <div class="card"><div class="k">Estimulos</div><div id="cardVideos" class="v">0</div></div>
         <div class="card"><div class="k">AOIs</div><div id="cardAois" class="v">0</div></div>
-        <div class="card"><div class="k">TFD total (s)</div><div id="cardTfd" class="v">0</div></div>
-        <div class="card"><div class="k">Visitas totales</div><div id="cardVisits" class="v">0</div></div>
+      </div>
+      <div class="cards-groups">
+        <div class="group pre">
+          <div class="group-title">Metricas pre-atentivas</div>
+          <div class="cards-grid">
+            <div class="card"><div class="k">FB media</div><div id="cardFb" class="v">-1</div></div>
+            <div class="card"><div class="k">TFF media (ms)</div><div id="cardTff" class="v">-1</div></div>
+          </div>
+        </div>
+        <div class="group sustained">
+          <div class="group-title">Metricas sostenidas</div>
+          <div class="cards-grid wide">
+            <div class="card"><div class="k">FD media (ms)</div><div id="cardFd" class="v">-1</div></div>
+            <div class="card"><div class="k">TFD media (ms)</div><div id="cardTfd" class="v">-1</div></div>
+            <div class="card"><div class="k">FC media</div><div id="cardFc" class="v">-1</div></div>
+            <div class="card"><div class="k">Visitas medias</div><div id="cardVisits" class="v">-1</div></div>
+            <div class="card"><div class="k">AOIs con revisitas</div><div id="cardRevisits" class="v">0</div></div>
+          </div>
+        </div>
       </div>
     </section>
 
     <section class="table-panel">
       <div class="toolbar">
-        <div class="note">La tabla muestra todas las filas del CSV AOI resumido. Las columnas derivadas <strong>FD</strong>, <strong>TFF</strong> y <strong>TFD</strong> se calculan a partir del propio export de Phase 3.</div>
+        <div class="note">La tabla muestra todas las filas del CSV AOI resumido. Si una AOI no fue visitada en la fila filtrada, sus metricas se exportan como <strong>-1</strong>.</div>
         <div class="note" id="toolbarNote"></div>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
+            <tr class="group-row">
+              <th rowspan="2">Participante</th>
+              <th rowspan="2">Estimulo</th>
+              <th rowspan="2">AOI</th>
+              <th rowspan="2">Categoria</th>
+              <th colspan="2" class="pre-head">Pre-atentivas</th>
+              <th colspan="5" class="sustained-head">Sostenidas</th>
+            </tr>
             <tr>
-              <th>Participante</th>
-              <th>Estímulo</th>
-              <th>AOI</th>
-              <th>Categoría</th>
-              <th>FC</th>
+              <th>FB</th>
+              <th>TFF (ms)</th>
               <th>FD (ms)</th>
-              <th>TFD (s)</th>
-              <th>TFF (s)</th>
-              <th>Visitas</th>
-              <th>Dwell valid</th>
-              <th>Dwell assigned</th>
-              <th>Conf.</th>
+              <th>TFD (ms)</th>
+              <th>FC</th>
+              <th>Visits</th>
+              <th>Revisitas</th>
             </tr>
           </thead>
           <tbody id="tableBody"></tbody>
@@ -315,11 +409,6 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
     const emptyState = document.getElementById("emptyState");
     const toolbarNote = document.getElementById("toolbarNote");
 
-    const formatNumber = (value, digits = 2) => Number(value).toLocaleString("es-ES", {{
-      minimumFractionDigits: digits,
-      maximumFractionDigits: digits
-    }});
-
     function uniqueValues(key) {{
       return [...new Set(dataset.map(row => row[key]).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
     }}
@@ -336,6 +425,26 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
         option.textContent = value;
         select.appendChild(option);
       }});
+    }}
+
+    function formatMetric(value, digits = 2) {{
+      if (value < 0) {{
+        return "-1";
+      }}
+      return Number(value).toLocaleString("es-ES", {{
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits
+      }});
+    }}
+
+    function metricMean(rows, key) {{
+      const validValues = rows
+        .map(row => Number(row[key]))
+        .filter(value => Number.isFinite(value) && value >= 0);
+      if (!validValues.length) {{
+        return -1;
+      }}
+      return validValues.reduce((sum, value) => sum + value, 0) / validValues.length;
     }}
 
     function filterRows() {{
@@ -387,9 +496,20 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
       document.getElementById("cardParticipants").textContent = new Set(rows.map(row => row.participant_id)).size;
       document.getElementById("cardVideos").textContent = new Set(rows.map(row => row.video_id)).size;
       document.getElementById("cardAois").textContent = new Set(rows.map(row => `${{row.video_id}}|${{row.aoi_name}}`)).size;
-      document.getElementById("cardTfd").textContent = formatNumber(rows.reduce((sum, row) => sum + row.dwell_time_s, 0), 2);
-      document.getElementById("cardVisits").textContent = rows.reduce((sum, row) => sum + row.visit_count, 0);
+      document.getElementById("cardFb").textContent = formatMetric(metricMean(rows, "fb_count"), 2);
+      document.getElementById("cardTff").textContent = formatMetric(metricMean(rows, "tff_ms"), 1);
+      document.getElementById("cardFd").textContent = formatMetric(metricMean(rows, "fd_ms"), 1);
+      document.getElementById("cardTfd").textContent = formatMetric(metricMean(rows, "tfd_ms"), 1);
+      document.getElementById("cardFc").textContent = formatMetric(metricMean(rows, "fc"), 2);
+      document.getElementById("cardVisits").textContent = formatMetric(metricMean(rows, "visit_count"), 2);
+      document.getElementById("cardRevisits").textContent = rows.filter(row => row.has_revisits === 1).length;
       toolbarNote.textContent = `Mostrando ${{rows.length}} fila(s) filtradas de ${{dataset.length}} totales.`;
+    }}
+
+    function renderMetricCell(value, digits = 2) {{
+      const formatted = formatMetric(Number(value), digits);
+      const cls = Number(value) < 0 ? "neg" : "";
+      return `<span class="${{cls}}">${{formatted}}</span>`;
     }}
 
     function renderRows(rows) {{
@@ -412,31 +532,28 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
             </span>
           </td>
           <td>${{row.aoi_category || ''}}</td>
-          <td>${{row.fixation_steps}}</td>
-          <td>${{formatNumber(row.fd_ms, 1)}}</td>
-          <td>${{formatNumber(row.dwell_time_s, 2)}}</td>
-          <td>${{formatNumber(row.time_to_first_fixation_s, 2)}}</td>
-          <td>${{row.visit_count}}</td>
-          <td>${{formatNumber(row.dwell_share_of_valid_time * 100, 1)}}%</td>
-          <td>${{formatNumber(row.dwell_share_of_assigned_time * 100, 1)}}%</td>
-          <td>${{formatNumber(row.mean_aoi_confidence, 3)}}</td>
+          <td>${{renderMetricCell(row.fb_count, 0)}}</td>
+          <td>${{renderMetricCell(row.tff_ms, 1)}}</td>
+          <td>${{renderMetricCell(row.fd_ms, 1)}}</td>
+          <td>${{renderMetricCell(row.tfd_ms, 1)}}</td>
+          <td>${{renderMetricCell(row.fc, 0)}}</td>
+          <td>${{renderMetricCell(row.visit_count, 0)}}</td>
+          <td class="checkbox-cell"><input type="checkbox" disabled ${{row.has_revisits === 1 ? "checked" : ""}}></td>
         `;
         tableBody.appendChild(tr);
       }});
 
-      const mean = (selector) => rows.length ? rows.reduce((sum, row) => sum + selector(row), 0) / rows.length : 0;
       const summaryRow = document.createElement("tr");
       summaryRow.className = "summary-row";
       summaryRow.innerHTML = `
         <td colspan="4"><strong>Media visible</strong></td>
-        <td>${{formatNumber(mean(row => row.fixation_steps), 2)}}</td>
-        <td>${{formatNumber(mean(row => row.fd_ms), 1)}}</td>
-        <td>${{formatNumber(mean(row => row.dwell_time_s), 2)}}</td>
-        <td>${{formatNumber(mean(row => row.time_to_first_fixation_s), 2)}}</td>
-        <td>${{formatNumber(mean(row => row.visit_count), 2)}}</td>
-        <td>${{formatNumber(mean(row => row.dwell_share_of_valid_time) * 100, 1)}}%</td>
-        <td>${{formatNumber(mean(row => row.dwell_share_of_assigned_time) * 100, 1)}}%</td>
-        <td>${{formatNumber(mean(row => row.mean_aoi_confidence), 3)}}</td>
+        <td>${{formatMetric(metricMean(rows, "fb_count"), 2)}}</td>
+        <td>${{formatMetric(metricMean(rows, "tff_ms"), 1)}}</td>
+        <td>${{formatMetric(metricMean(rows, "fd_ms"), 1)}}</td>
+        <td>${{formatMetric(metricMean(rows, "tfd_ms"), 1)}}</td>
+        <td>${{formatMetric(metricMean(rows, "fc"), 2)}}</td>
+        <td>${{formatMetric(metricMean(rows, "visit_count"), 2)}}</td>
+        <td class="checkbox-cell"><input type="checkbox" disabled ${{rows.some(row => row.has_revisits === 1) ? "checked" : ""}}></td>
       `;
       tableBody.appendChild(summaryRow);
     }}
@@ -448,7 +565,7 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
     }}
 
     fillSelect(participantFilter, uniqueValues("participant_id"), "Todos los participantes");
-    fillSelect(videoFilter, uniqueValues("video_id"), "Todos los estímulos");
+    fillSelect(videoFilter, uniqueValues("video_id"), "Todos los estimulos");
     refreshAoiOptions();
 
     participantFilter.addEventListener("change", () => {{

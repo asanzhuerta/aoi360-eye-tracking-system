@@ -97,6 +97,8 @@ AOI_SUMMARY_COLUMNS = [
     "session_id",
     "video_id",
     "aoi_id",
+    "was_visited",
+    "fb_count",
     "fixation_steps",
     "dwell_time_ms",
     "time_to_first_fixation_ms",
@@ -108,6 +110,7 @@ AOI_SUMMARY_COLUMNS = [
     "mean_right_pupil_diameter",
     "fixation_step_ms_estimate",
     "visit_count",
+    "has_revisits",
     "share_of_valid_fixation_steps",
     "dwell_share_of_valid_time",
     "dwell_share_of_assigned_time",
@@ -508,6 +511,16 @@ def _prepare_assigned_rows(
     return rows, session_step_lookup, session_valid_lookup
 
 
+def _filter_visited_aoi_rows(aoi_summary: pd.DataFrame) -> pd.DataFrame:
+    if aoi_summary.empty:
+        return aoi_summary
+
+    if "was_visited" not in aoi_summary.columns:
+        return aoi_summary.copy()
+
+    return aoi_summary[aoi_summary["was_visited"] == 1].copy()
+
+
 def build_aoi_summary(runtime_rows: pd.DataFrame, session_summary: pd.DataFrame) -> pd.DataFrame:
     """Compute AOI-level metrics from fixation-based runtime rows."""
 
@@ -519,6 +532,7 @@ def build_aoi_summary(runtime_rows: pd.DataFrame, session_summary: pd.DataFrame)
     ].to_dict()
 
     visit_rows: list[dict[str, object]] = []
+    fb_rows: list[dict[str, object]] = []
     for group_key, session_rows in rows.groupby(SESSION_GROUP_COLUMNS, dropna=False):
         fixation_step_ms = float(session_step_lookup.get(group_key, DEFAULT_FIXATION_STEP_MS))
         session_rows = session_rows.copy()
@@ -533,6 +547,15 @@ def build_aoi_summary(runtime_rows: pd.DataFrame, session_summary: pd.DataFrame)
         if assigned_rows.empty:
             continue
 
+        valid_rows = session_rows[session_rows["is_valid"] == 1].copy()
+        valid_rows["valid_step_index"] = range(len(valid_rows))
+        fb_lookup = (
+            valid_rows[valid_rows["aoi_id"] > 0]
+            .groupby("aoi_id", dropna=False)["valid_step_index"]
+            .min()
+            .to_dict()
+        )
+
         visit_counts = assigned_rows.groupby("assigned_aoi_id")["visit_id"].nunique()
         for aoi_id, visit_count in visit_counts.items():
             visit_rows.append(
@@ -544,8 +567,18 @@ def build_aoi_summary(runtime_rows: pd.DataFrame, session_summary: pd.DataFrame)
                     "visit_count": int(visit_count),
                 }
             )
+            fb_rows.append(
+                {
+                    "participant_id": group_key[0],
+                    "session_id": group_key[1],
+                    "video_id": group_key[2],
+                    "aoi_id": int(aoi_id),
+                    "fb_count": int(fb_lookup.get(int(aoi_id), -1)),
+                }
+            )
 
     visit_summary = pd.DataFrame(visit_rows)
+    fb_summary = pd.DataFrame(fb_rows)
     valid_assigned_rows = rows.dropna(subset=["assigned_aoi_id"]).copy()
     if valid_assigned_rows.empty:
         return _empty_dataframe(AOI_SUMMARY_COLUMNS)
@@ -573,6 +606,7 @@ def build_aoi_summary(runtime_rows: pd.DataFrame, session_summary: pd.DataFrame)
         ),
         axis=1,
     )
+    summary["was_visited"] = 1
     summary["dwell_time_ms"] = summary["fixation_steps"] * summary["fixation_step_ms_estimate"]
     summary["visit_count"] = 1
     if not visit_summary.empty:
@@ -584,6 +618,17 @@ def build_aoi_summary(runtime_rows: pd.DataFrame, session_summary: pd.DataFrame)
         )
         summary["visit_count"] = summary["visit_count_override"].fillna(summary["visit_count"]).astype(int)
         summary.drop(columns=["visit_count_override"], inplace=True)
+    summary["has_revisits"] = (summary["visit_count"] > 1).astype(int)
+    summary["fb_count"] = -1
+    if not fb_summary.empty:
+        summary = summary.merge(
+            fb_summary,
+            on=SESSION_GROUP_COLUMNS + ["aoi_id"],
+            how="left",
+            suffixes=("", "_override"),
+        )
+        summary["fb_count"] = summary["fb_count_override"].fillna(summary["fb_count"]).astype(int)
+        summary.drop(columns=["fb_count_override"], inplace=True)
 
     summary["share_of_valid_fixation_steps"] = summary.apply(
         lambda row: float(
@@ -657,6 +702,91 @@ def build_aoi_summary(runtime_rows: pd.DataFrame, session_summary: pd.DataFrame)
         axis=1,
     )
     return summary[AOI_SUMMARY_COLUMNS]
+
+
+def expand_aoi_summary_with_manifest(
+    aoi_summary: pd.DataFrame,
+    session_summary: pd.DataFrame,
+    manifest_index: pd.DataFrame,
+) -> pd.DataFrame:
+    """Ensure one AOI row per participant/session/video/AOI, marking unseen AOIs with -1."""
+
+    if session_summary.empty:
+        return _empty_dataframe(AOI_SUMMARY_COLUMNS + [column for column in MANIFEST_COLUMNS if column not in AOI_SUMMARY_COLUMNS])
+
+    if manifest_index.empty:
+        if aoi_summary.empty:
+            return _empty_dataframe(AOI_SUMMARY_COLUMNS)
+        return aoi_summary.copy()
+
+    session_keys = session_summary[SESSION_GROUP_COLUMNS].drop_duplicates().copy()
+    expanded = session_keys.merge(manifest_index, on="video_id", how="inner")
+    if expanded.empty:
+        if aoi_summary.empty:
+            return _empty_dataframe(AOI_SUMMARY_COLUMNS)
+        return aoi_summary.copy()
+
+    merged = expanded.merge(
+        aoi_summary,
+        on=SESSION_GROUP_COLUMNS + ["aoi_id"],
+        how="left",
+        suffixes=("_manifest", ""),
+    )
+
+    for text_column in ["aoi_name", "aoi_category", "aoi_prompt", "aoi_color"]:
+        manifest_column = f"{text_column}_manifest"
+        if manifest_column in merged.columns:
+            base_values = merged[text_column] if text_column in merged.columns else pd.Series([""] * len(merged))
+            merged[text_column] = base_values.replace("", pd.NA).fillna(merged[manifest_column]).fillna("")
+            merged.drop(columns=[manifest_column], inplace=True)
+
+    session_step_lookup = session_summary.set_index(SESSION_GROUP_COLUMNS)["fixation_step_ms_estimate"].to_dict()
+    merged["fixation_step_ms_estimate"] = merged.apply(
+        lambda row: float(
+            row["fixation_step_ms_estimate"]
+            if pd.notna(row.get("fixation_step_ms_estimate"))
+            else session_step_lookup.get(
+                (row["participant_id"], row["session_id"], row["video_id"]),
+                DEFAULT_FIXATION_STEP_MS,
+            )
+        ),
+        axis=1,
+    )
+
+    merged["was_visited"] = merged["was_visited"].fillna(0).astype(int)
+    merged["has_revisits"] = merged["has_revisits"].fillna(0).astype(int)
+
+    int_sentinel_columns = [
+        "fb_count",
+        "fixation_steps",
+        "visit_count",
+        "first_frame_index",
+        "last_frame_index",
+    ]
+    for column in int_sentinel_columns:
+        merged[column] = merged[column].fillna(-1).astype(int)
+
+    float_sentinel_columns = [
+        "dwell_time_ms",
+        "time_to_first_fixation_ms",
+        "last_timestamp_ms",
+        "mean_aoi_confidence",
+        "mean_left_pupil_diameter",
+        "mean_right_pupil_diameter",
+        "share_of_valid_fixation_steps",
+        "dwell_share_of_valid_time",
+        "dwell_share_of_assigned_time",
+        "fixation_steps_per_minute_valid",
+        "visit_count_per_minute_valid",
+        "time_to_first_fixation_ratio",
+    ]
+    for column in float_sentinel_columns:
+        merged[column] = merged[column].fillna(-1.0).astype(float)
+
+    ordered_columns = AOI_SUMMARY_COLUMNS + [
+        column for column in MANIFEST_COLUMNS if column not in AOI_SUMMARY_COLUMNS
+    ]
+    return merged[ordered_columns]
 
 
 def build_transition_summary(runtime_rows: pd.DataFrame, session_summary: pd.DataFrame) -> pd.DataFrame:
@@ -774,7 +904,14 @@ def build_participant_summary(session_summary: pd.DataFrame, aoi_summary: pd.Dat
         summary["total_visit_count"] = 0
         return summary[PARTICIPANT_SUMMARY_COLUMNS]
 
-    enriched = aoi_summary.copy()
+    enriched = _filter_visited_aoi_rows(aoi_summary)
+    if enriched.empty:
+        summary["unique_video_aois"] = 0
+        summary["assigned_fixation_steps_total"] = 0
+        summary["total_dwell_time_ms"] = 0.0
+        summary["total_visit_count"] = 0
+        return summary[PARTICIPANT_SUMMARY_COLUMNS]
+
     enriched["video_aoi_key"] = enriched["video_id"].astype(str) + "::" + enriched["aoi_id"].astype(str)
     aoi_aggregate = (
         enriched.groupby("participant_id", as_index=False).agg(
@@ -871,8 +1008,17 @@ def build_video_summary(session_summary: pd.DataFrame, aoi_summary: pd.DataFrame
         summary["total_visit_count"] = 0
         return summary[VIDEO_SUMMARY_COLUMNS]
 
+    visited_aoi_rows = _filter_visited_aoi_rows(aoi_summary)
+    if visited_aoi_rows.empty:
+        summary["unique_aois_observed"] = 0
+        summary["assigned_fixation_steps_total"] = 0
+        summary["total_dwell_time_ms"] = 0.0
+        summary["mean_dwell_time_ms_per_session"] = 0.0
+        summary["total_visit_count"] = 0
+        return summary[VIDEO_SUMMARY_COLUMNS]
+
     aoi_aggregate = (
-        aoi_summary.groupby("video_id", as_index=False).agg(
+        visited_aoi_rows.groupby("video_id", as_index=False).agg(
             unique_aois_observed=("aoi_id", "nunique"),
             assigned_fixation_steps_total=("fixation_steps", "sum"),
             total_dwell_time_ms=("dwell_time_ms", "sum"),
@@ -1194,26 +1340,33 @@ def build_video_aoi_summary(aoi_summary: pd.DataFrame, session_summary: pd.DataF
         if column not in rows.columns:
             rows[column] = ""
 
-    summary = (
-        rows.groupby(
-            ["video_id", "aoi_id", "aoi_name", "aoi_category", "aoi_prompt", "aoi_color"],
-            as_index=False,
-            dropna=False,
-        ).agg(
-            session_hit_count=("participant_id", "size"),
-            participants_with_hits=("participant_id", "nunique"),
-            total_fixation_steps=("fixation_steps", "sum"),
-            total_dwell_time_ms=("dwell_time_ms", "sum"),
-            total_visit_count=("visit_count", "sum"),
-            mean_dwell_time_ms_when_hit=("dwell_time_ms", "mean"),
-            mean_dwell_share_of_valid_time_when_hit=("dwell_share_of_valid_time", "mean"),
-            mean_dwell_share_of_assigned_time_when_hit=("dwell_share_of_assigned_time", "mean"),
-            mean_fixation_steps_per_minute_valid_when_hit=("fixation_steps_per_minute_valid", "mean"),
-            mean_visit_count_per_minute_valid_when_hit=("visit_count_per_minute_valid", "mean"),
-            mean_time_to_first_fixation_ms_when_hit=("time_to_first_fixation_ms", "mean"),
-            mean_time_to_first_fixation_ratio_when_hit=("time_to_first_fixation_ratio", "mean"),
-        )
+    group_columns = ["video_id", "aoi_id", "aoi_name", "aoi_category", "aoi_prompt", "aoi_color"]
+    summary = rows[group_columns].drop_duplicates().reset_index(drop=True)
+    hit_counts = (
+        rows.groupby(group_columns, as_index=False, dropna=False)
+        .agg(session_hit_count=("was_visited", "sum"))
     )
+    summary = summary.merge(hit_counts, on=group_columns, how="left")
+
+    visited_rows = _filter_visited_aoi_rows(rows)
+    if not visited_rows.empty:
+        visited_summary = (
+            visited_rows.groupby(group_columns, as_index=False, dropna=False)
+            .agg(
+                participants_with_hits=("participant_id", "nunique"),
+                total_fixation_steps=("fixation_steps", "sum"),
+                total_dwell_time_ms=("dwell_time_ms", "sum"),
+                total_visit_count=("visit_count", "sum"),
+                mean_dwell_time_ms_when_hit=("dwell_time_ms", "mean"),
+                mean_dwell_share_of_valid_time_when_hit=("dwell_share_of_valid_time", "mean"),
+                mean_dwell_share_of_assigned_time_when_hit=("dwell_share_of_assigned_time", "mean"),
+                mean_fixation_steps_per_minute_valid_when_hit=("fixation_steps_per_minute_valid", "mean"),
+                mean_visit_count_per_minute_valid_when_hit=("visit_count_per_minute_valid", "mean"),
+                mean_time_to_first_fixation_ms_when_hit=("time_to_first_fixation_ms", "mean"),
+                mean_time_to_first_fixation_ratio_when_hit=("time_to_first_fixation_ratio", "mean"),
+            )
+        )
+        summary = summary.merge(visited_summary, on=group_columns, how="left")
 
     session_totals = (
         session_summary.groupby("video_id", as_index=False)
@@ -1221,6 +1374,21 @@ def build_video_aoi_summary(aoi_summary: pd.DataFrame, session_summary: pd.DataF
     )
     summary = summary.merge(session_totals, on="video_id", how="left")
     summary["session_runs_total_for_video"] = summary["session_runs_total_for_video"].fillna(0).astype(int)
+    summary["session_hit_count"] = summary["session_hit_count"].fillna(0).astype(int)
+    summary["participants_with_hits"] = summary["participants_with_hits"].fillna(0).astype(int)
+    summary["total_fixation_steps"] = summary["total_fixation_steps"].fillna(0).astype(int)
+    summary["total_visit_count"] = summary["total_visit_count"].fillna(0).astype(int)
+    summary["total_dwell_time_ms"] = summary["total_dwell_time_ms"].fillna(0.0)
+    for column in [
+        "mean_dwell_time_ms_when_hit",
+        "mean_dwell_share_of_valid_time_when_hit",
+        "mean_dwell_share_of_assigned_time_when_hit",
+        "mean_fixation_steps_per_minute_valid_when_hit",
+        "mean_visit_count_per_minute_valid_when_hit",
+        "mean_time_to_first_fixation_ms_when_hit",
+        "mean_time_to_first_fixation_ratio_when_hit",
+    ]:
+        summary[column] = summary[column].fillna(-1.0)
     summary["session_hit_ratio"] = summary.apply(
         lambda row: _safe_divide(row["session_hit_count"], row["session_runs_total_for_video"]),
         axis=1,
@@ -1272,13 +1440,13 @@ def analyze_runtime_rows(
         .reset_index(drop=True)
     )
     source_file_summary = build_source_file_summary(raw_rows, session_quality)
+    manifest_index = load_manifest_index(manifest_root)
     aoi_summary = build_aoi_summary(raw_rows, session_summary)
+    aoi_summary = _enrich_aoi_summary(aoi_summary, manifest_index)
+    aoi_summary = expand_aoi_summary_with_manifest(aoi_summary, session_summary, manifest_index)
     participant_summary = build_participant_summary(session_summary, aoi_summary)
     video_summary = build_video_summary(session_summary, aoi_summary)
     transition_summary = build_transition_summary(raw_rows, session_summary)
-    manifest_index = load_manifest_index(manifest_root)
-
-    aoi_summary = _enrich_aoi_summary(aoi_summary, manifest_index)
     video_aoi_summary = build_video_aoi_summary(aoi_summary, session_summary)
     transition_summary = _enrich_transition_summary(transition_summary, manifest_index)
 

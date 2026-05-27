@@ -31,6 +31,8 @@ def build_grouped_summary(input_csv: Path) -> pd.DataFrame:
         "aoi_id",
         "aoi_name",
         "aoi_category",
+        "was_visited",
+        "fb_count",
         "fixation_steps",
         "dwell_time_ms",
         "time_to_first_fixation_ms",
@@ -41,39 +43,30 @@ def build_grouped_summary(input_csv: Path) -> pd.DataFrame:
         missing_list = ", ".join(sorted(missing))
         raise ValueError(f"Missing required columns in {input_csv}: {missing_list}")
 
-    grouped = (
-        dataframe.groupby(["video_id", "aoi_id", "aoi_name", "aoi_category"], dropna=False, as_index=False)
-        .agg(
-            session_hits=("aoi_name", "size"),
-            mean_fc=("fixation_steps", "mean"),
-            total_fixation_steps=("fixation_steps", "sum"),
-            total_dwell_time_ms=("dwell_time_ms", "sum"),
-            mean_tfd_ms=("dwell_time_ms", "mean"),
-            mean_tff_ms=("time_to_first_fixation_ms", "mean"),
-            mean_visits=("visit_count", "mean"),
+    rows: list[dict[str, object]] = []
+    group_columns = ["video_id", "aoi_id", "aoi_name", "aoi_category"]
+    for group_key, group in dataframe.groupby(group_columns, dropna=False):
+        visited_rows = group[group["was_visited"] == 1].copy()
+        total_fixation_steps = float(visited_rows["fixation_steps"].sum()) if not visited_rows.empty else 0.0
+        total_dwell_time_ms = float(visited_rows["dwell_time_ms"].sum()) if not visited_rows.empty else 0.0
+        rows.append(
+            {
+                "video_id": group_key[0],
+                "aoi_id": group_key[1],
+                "aoi_name": group_key[2],
+                "aoi_category": group_key[3],
+                "session_rows_total": int(len(group)),
+                "session_hits": int(visited_rows["was_visited"].sum()) if not visited_rows.empty else 0,
+                "mean_fb": float(visited_rows["fb_count"].mean()) if not visited_rows.empty else -1.0,
+                "mean_fc": float(visited_rows["fixation_steps"].mean()) if not visited_rows.empty else -1.0,
+                "fd_ms": (total_dwell_time_ms / total_fixation_steps) if total_fixation_steps > 0 else -1.0,
+                "mean_tfd_ms": float(visited_rows["dwell_time_ms"].mean()) if not visited_rows.empty else -1.0,
+                "mean_tff_ms": float(visited_rows["time_to_first_fixation_ms"].mean()) if not visited_rows.empty else -1.0,
+                "mean_visits": float(visited_rows["visit_count"].mean()) if not visited_rows.empty else -1.0,
+            }
         )
-    )
-    grouped["fd_ms"] = grouped["total_dwell_time_ms"] / grouped["total_fixation_steps"].where(
-        grouped["total_fixation_steps"] > 0,
-        pd.NA,
-    )
-    grouped["mean_tfd_s"] = grouped["mean_tfd_ms"] / 1000.0
-    grouped["mean_tff_s"] = grouped["mean_tff_ms"] / 1000.0
 
-    grouped = grouped[
-        [
-            "video_id",
-            "aoi_id",
-            "aoi_name",
-            "aoi_category",
-            "session_hits",
-            "mean_fc",
-            "fd_ms",
-            "mean_tfd_s",
-            "mean_tff_s",
-            "mean_visits",
-        ]
-    ].copy()
+    grouped = pd.DataFrame(rows)
 
     grouped["video_sort"] = grouped["video_id"].apply(
         lambda value: VIDEO_ORDER.index(value) if value in VIDEO_ORDER else len(VIDEO_ORDER)
@@ -84,41 +77,47 @@ def build_grouped_summary(input_csv: Path) -> pd.DataFrame:
 
 
 def build_latex_tables(grouped: pd.DataFrame) -> str:
-    lines: list[str] = [
-        "\\begin{table}[htbp]",
-        "\\centering",
-        "\\caption{Mean Phase~3 AOI metrics grouped by stimulus and AOI. Means are computed over participant-session runs in which the AOI was visited. FD is derived from grouped dwell time and grouped fixation count.}",
-        "\\label{tab:pilot-phase3-aoi-metrics-by-stimulus}",
-    ]
+    lines: list[str] = []
+    label_suffix_map = {
+        "test1Camera360": "test1",
+        "test2Camera360": "test2",
+        "test3Lions360": "test3",
+    }
 
-    for index, video_id in enumerate(VIDEO_ORDER):
+    for video_id in VIDEO_ORDER:
         video_rows = grouped[grouped["video_id"] == video_id].copy()
         if video_rows.empty:
             continue
 
-        if index > 0:
-            lines.extend(["\\medskip"])
-
         lines.extend(
             [
-                "\\begin{subtable}{\\textwidth}",
+                "\\begin{table}[htbp]",
                 "\\centering",
-                f"\\caption{{\\texttt{{{_escape_tex(video_id)}}}}}",
-                "\\begin{tabular}{@{}lrrrrr@{}}",
+                "\\scriptsize",
+                (
+                    "\\caption{Mean Phase~3 AOI metrics for "
+                    f"\\texttt{{{_escape_tex(video_id)}}}. Means are computed over "
+                    "participant-session runs in which the AOI was visited; AOIs "
+                    "without visits remain at -1. FD is derived from grouped dwell "
+                    "time and grouped fixation count.}"
+                ),
+                f"\\label{{tab:pilot-phase3-aoi-metrics-{label_suffix_map.get(video_id, _escape_tex(video_id))}}}",
+                "\\begin{tabular}{@{}lrrrrrr@{}}",
                 "\\toprule",
-                "AOI & FC & FD (ms) & TFD (s) & TFF (s) & Visits \\\\",
+                "AOI & FB & TFF (ms) & FD (ms) & TFD (ms) & FC & Visits \\\\",
                 "\\midrule",
             ]
         )
 
         for _, row in video_rows.iterrows():
             lines.append(
-                " \\texttt{{{aoi_name}}} & {mean_fc:.2f} & {fd_ms:.1f} & {mean_tfd_s:.2f} & {mean_tff_s:.2f} & {mean_visits:.2f} \\\\".format(
+                " \\texttt{{{aoi_name}}} & {mean_fb:.2f} & {mean_tff_ms:.1f} & {fd_ms:.1f} & {mean_tfd_ms:.1f} & {mean_fc:.2f} & {mean_visits:.2f} \\\\".format(
                     aoi_name=_escape_tex(row["aoi_name"]),
+                    mean_fb=float(row["mean_fb"]),
+                    mean_tff_ms=float(row["mean_tff_ms"]),
+                    mean_tfd_ms=float(row["mean_tfd_ms"]),
                     mean_fc=float(row["mean_fc"]),
                     fd_ms=float(row["fd_ms"]),
-                    mean_tfd_s=float(row["mean_tfd_s"]),
-                    mean_tff_s=float(row["mean_tff_s"]),
                     mean_visits=float(row["mean_visits"]),
                 )
             )
@@ -127,17 +126,16 @@ def build_latex_tables(grouped: pd.DataFrame) -> str:
             [
                 "\\bottomrule",
                 "\\end{tabular}",
-                "\\end{subtable}",
+                "\\end{table}",
+                "",
             ]
         )
-
-    lines.append("\\end{table}")
     return "\n".join(lines) + "\n"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build grouped Phase 3 stimulus x AOI mean metrics and optional LaTeX subtables.",
+        description="Build grouped Phase 3 stimulus x AOI mean metrics and optional LaTeX tables.",
     )
     parser.add_argument("--input-csv", required=True, help="Path to runtime_aoi_summary.csv")
     parser.add_argument(
@@ -146,7 +144,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-tex",
-        help="Optional LaTeX fragment path for the stimulus-specific AOI subtables.",
+        help="Optional LaTeX fragment path for the stimulus-specific AOI tables.",
     )
     return parser.parse_args()
 

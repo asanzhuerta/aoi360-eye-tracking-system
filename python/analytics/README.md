@@ -15,7 +15,7 @@ The current package supports:
 4. validating the expected CSV schema
 5. estimating the effective fixation cadence per `participant x session x video`
 6. producing practical quality and inclusion reports
-7. computing AOI-level dwell time, first-fixation timing, visit counts, and normalized time-share metrics
+7. computing AOI-level dwell time, first-fixation timing, fixations-before (`FB`), visit counts, revisit flags, and normalized time-share metrics
 8. aggregating metrics by participant, by video, and by `video x AOI`
 9. estimating AOI-to-AOI transitions from the ordered fixation timeline
 10. enriching AOI ids with names/categories from the AOI sequence manifests when available
@@ -25,7 +25,7 @@ The current package supports:
 Important note:
 
 - the current input is the runtime fixation-level export, not a continuous raw gaze sample stream
-- literature metrics such as `TFF`, `FD`, `TFD`, `FC`, and visits are therefore operationalised from fixation-level rows
+- literature metrics such as `FB`, `TFF`, `FD`, `TFD`, `FC`, and visits are therefore operationalised from fixation-level rows
 
 ## Installation
 
@@ -121,11 +121,12 @@ python python/analytics/scripts/build_runtime_aoi_html_report.py --input-csv dat
 The HTML viewer supports:
 
 - filter by participant
-- filter by experiment/session
 - filter by stimulus/video
-- filter by AOI
+- filter by AOI, narrowed automatically to the selected stimulus
 - free-text search
-- direct inspection of `FC`, derived `FD`, `TFD`, `TFF`, visits, dwell shares, and confidence
+- direct inspection of pre-attentive metrics (`FB`, `TFF`) and sustained metrics (`FD`, `TFD`, `FC`, `Visits`)
+- a checkbox-style revisits field
+- `-1` sentinel values for AOIs that were not visited in the current participant/session/stimulus row
 
 Normalize pilot participant IDs so the analytics outputs use `P01`...`P08`
 instead of the internal runtime IDs:
@@ -180,20 +181,28 @@ Session-quality layer:
 
 Main AOI metrics:
 
+- `fb_count` -> fixations before first AOI hit (`FB`)
 - `fixation_steps` -> fixation count proxy (`FC`)
 - `dwell_time_ms` -> total fixation duration (`TFD`)
 - `time_to_first_fixation_ms` -> time to first fixation (`TFF`)
-- `visit_count` -> AOI revisit count
+- `visit_count` -> AOI visit count
+- `has_revisits` -> whether the AOI was revisited after the first visit
 - `dwell_share_of_valid_time` -> share of valid tracked time spent on the AOI
 - `dwell_share_of_assigned_time` -> share of AOI-assigned time spent on the AOI
+
+Detailed AOI rows:
+
+- `runtime_aoi_summary.csv` now expands each `participant x session x stimulus` run against the manifest AOI list for that stimulus
+- AOIs that were not visited keep their semantic metadata but export `-1` for AOI-dependent metrics such as `FB`, `TFF`, `TFD`, `FC`, and `Visits`
 
 Grouped AOI means:
 
 - `runtime_video_aoi_mean_metrics.csv` aggregates the detailed AOI rows by `stimulus x AOI`
+- `mean_fb` -> mean fixations-before count over visited runs
 - `mean_fc` -> mean fixation count over runs in which the AOI was visited
 - `fd_ms` -> derived fixation duration from grouped dwell time and grouped fixation count
-- `mean_tfd_s` -> mean total fixation duration per visited run
-- `mean_tff_s` -> mean time to first fixation per visited run
+- `mean_tfd_ms` -> mean total fixation duration per visited run
+- `mean_tff_ms` -> mean time to first fixation per visited run
 - `mean_visits` -> mean AOI visit count per visited run
 
 Transition metrics:

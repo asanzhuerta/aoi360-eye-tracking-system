@@ -87,12 +87,20 @@ and currently exports:
 - `runtime_participant_summary.csv`
 - `runtime_video_summary.csv`
 - `runtime_aoi_summary.csv`
+- `runtime_video_aoi_mean_metrics.csv`
 - `runtime_video_aoi_summary.csv`
 - `runtime_transition_summary.csv`
 - `runtime_summary_snapshot.json`
 
 For AOI-level inspection, the repository also supports a static HTML viewer built
-from `runtime_aoi_summary.csv`.
+from `runtime_aoi_summary.csv`. The current Phase 3 viewer uses:
+
+- participant and stimulus filters
+- AOI filtering that narrows automatically to the selected stimulus
+- pre-attentive metrics on the left (`FB`, `TFF`)
+- sustained metrics on the right (`FD`, `TFD`, `FC`, `Visits`)
+- a checkbox field that marks AOIs with revisits
+- `-1` sentinel values for AOIs that were not visited in a given participant/session/stimulus row
 
 ## Pilot reference outputs
 
@@ -106,6 +114,8 @@ Key files from that run:
 - `runtime_participant_summary.csv`
 - `runtime_video_summary.csv`
 - `runtime_aoi_summary.csv`
+- `runtime_video_aoi_mean_metrics.csv`
+- `runtime_video_aoi_summary.csv`
 - `runtime_transition_summary.csv`
 - `runtime_aoi_summary_viewer.html`
 
