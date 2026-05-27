@@ -73,7 +73,7 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
     title_escaped = html.escape(title)
     source_csv_escaped = html.escape(source_csv)
     return f"""<!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -314,17 +314,17 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
   <div class="wrap">
     <section class="hero">
       <h1>{title_escaped}</h1>
-      <p class="subtitle">Visor HTML de Phase 3 generado desde <code>{source_csv_escaped}</code>. Las AOI no visitadas se muestran con <code>-1</code> y las metricas se ordenan como pre-atentivas (izquierda) y sostenidas (derecha).</p>
+      <p class="subtitle">Phase 3 HTML viewer generated from <code>{source_csv_escaped}</code>. Unvisited AOIs are shown with <code>-1</code>, and the metrics are arranged as pre-attentive (left) and sustained (right).</p>
     </section>
 
     <section class="filters">
       <div class="filters-grid">
         <div>
-          <label for="participantFilter">Participante</label>
+          <label for="participantFilter">Participant</label>
           <select id="participantFilter"></select>
         </div>
         <div>
-          <label for="videoFilter">Estimulo</label>
+          <label for="videoFilter">Stimulus</label>
           <select id="videoFilter"></select>
         </div>
         <div>
@@ -332,35 +332,35 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
           <select id="aoiFilter"></select>
         </div>
         <div>
-          <label for="searchFilter">Buscar texto</label>
-          <input id="searchFilter" type="text" placeholder="p.ej. person_02 o lion">
+          <label for="searchFilter">Search text</label>
+          <input id="searchFilter" type="text" placeholder="e.g. person_02 or lion">
         </div>
       </div>
     </section>
 
     <section class="cards">
       <div class="cards-top">
-        <div class="card"><div class="k">Filas visibles</div><div id="cardRows" class="v">0</div></div>
-        <div class="card"><div class="k">Participantes</div><div id="cardParticipants" class="v">0</div></div>
-        <div class="card"><div class="k">Estimulos</div><div id="cardVideos" class="v">0</div></div>
+        <div class="card"><div class="k">Visible rows</div><div id="cardRows" class="v">0</div></div>
+        <div class="card"><div class="k">Participants</div><div id="cardParticipants" class="v">0</div></div>
+        <div class="card"><div class="k">Stimuli</div><div id="cardVideos" class="v">0</div></div>
         <div class="card"><div class="k">AOIs</div><div id="cardAois" class="v">0</div></div>
       </div>
       <div class="cards-groups">
         <div class="group pre">
-          <div class="group-title">Metricas pre-atentivas</div>
+          <div class="group-title">Pre-attentive metrics</div>
           <div class="cards-grid">
-            <div class="card"><div class="k">FB media</div><div id="cardFb" class="v">-1</div></div>
-            <div class="card"><div class="k">TFF media (ms)</div><div id="cardTff" class="v">-1</div></div>
+            <div class="card"><div class="k">Mean FB</div><div id="cardFb" class="v">-1</div></div>
+            <div class="card"><div class="k">Mean TFF (ms)</div><div id="cardTff" class="v">-1</div></div>
           </div>
         </div>
         <div class="group sustained">
-          <div class="group-title">Metricas sostenidas</div>
+          <div class="group-title">Sustained metrics</div>
           <div class="cards-grid wide">
-            <div class="card"><div class="k">FD media (ms)</div><div id="cardFd" class="v">-1</div></div>
-            <div class="card"><div class="k">TFD media (ms)</div><div id="cardTfd" class="v">-1</div></div>
-            <div class="card"><div class="k">FC media</div><div id="cardFc" class="v">-1</div></div>
-            <div class="card"><div class="k">Visitas medias</div><div id="cardVisits" class="v">-1</div></div>
-            <div class="card"><div class="k">AOIs con revisitas</div><div id="cardRevisits" class="v">0</div></div>
+            <div class="card"><div class="k">Mean FD (ms)</div><div id="cardFd" class="v">-1</div></div>
+            <div class="card"><div class="k">Mean TFD (ms)</div><div id="cardTfd" class="v">-1</div></div>
+            <div class="card"><div class="k">Mean FC</div><div id="cardFc" class="v">-1</div></div>
+            <div class="card"><div class="k">Mean visits</div><div id="cardVisits" class="v">-1</div></div>
+            <div class="card"><div class="k">AOIs with revisits</div><div id="cardRevisits" class="v">0</div></div>
           </div>
         </div>
       </div>
@@ -368,19 +368,19 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
 
     <section class="table-panel">
       <div class="toolbar">
-        <div class="note">La tabla muestra todas las filas del CSV AOI resumido. Si una AOI no fue visitada en la fila filtrada, sus metricas se exportan como <strong>-1</strong>.</div>
+        <div class="note">The table shows every row from the summarized AOI CSV. If an AOI was not visited in the filtered row, its metrics are exported as <strong>-1</strong>.</div>
         <div class="note" id="toolbarNote"></div>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr class="group-row">
-              <th rowspan="2">Participante</th>
-              <th rowspan="2">Estimulo</th>
+              <th rowspan="2">Participant</th>
+              <th rowspan="2">Stimulus</th>
               <th rowspan="2">AOI</th>
-              <th rowspan="2">Categoria</th>
-              <th colspan="2" class="pre-head">Pre-atentivas</th>
-              <th colspan="5" class="sustained-head">Sostenidas</th>
+              <th rowspan="2">Category</th>
+              <th colspan="2" class="pre-head">Pre-attentive</th>
+              <th colspan="5" class="sustained-head">Sustained</th>
             </tr>
             <tr>
               <th>FB</th>
@@ -389,13 +389,13 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
               <th>TFD (ms)</th>
               <th>FC</th>
               <th>Visits</th>
-              <th>Revisitas</th>
+              <th>Revisits</th>
             </tr>
           </thead>
           <tbody id="tableBody"></tbody>
         </table>
       </div>
-      <div id="emptyState" class="empty" hidden>No hay filas que coincidan con los filtros actuales.</div>
+      <div id="emptyState" class="empty" hidden>No rows match the current filters.</div>
     </section>
   </div>
 
@@ -431,7 +431,7 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
       if (value < 0) {{
         return "-1";
       }}
-      return Number(value).toLocaleString("es-ES", {{
+      return Number(value).toLocaleString("en-US", {{
         minimumFractionDigits: digits,
         maximumFractionDigits: digits
       }});
@@ -485,7 +485,7 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
       const aoiValues = [...new Set(candidateRows.map(row => row.aoi_name).filter(Boolean))]
         .sort((a, b) => String(a).localeCompare(String(b)));
 
-      fillSelect(aoiFilter, aoiValues, "Todas las AOI");
+      fillSelect(aoiFilter, aoiValues, "All AOIs");
       if (currentAoi && aoiValues.includes(currentAoi)) {{
         aoiFilter.value = currentAoi;
       }}
@@ -503,7 +503,7 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
       document.getElementById("cardFc").textContent = formatMetric(metricMean(rows, "fc"), 2);
       document.getElementById("cardVisits").textContent = formatMetric(metricMean(rows, "visit_count"), 2);
       document.getElementById("cardRevisits").textContent = rows.filter(row => row.has_revisits === 1).length;
-      toolbarNote.textContent = `Mostrando ${{rows.length}} fila(s) filtradas de ${{dataset.length}} totales.`;
+      toolbarNote.textContent = `Showing ${{rows.length}} filtered row(s) out of ${{dataset.length}} total.`;
     }}
 
     function renderMetricCell(value, digits = 2) {{
@@ -546,7 +546,7 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
       const summaryRow = document.createElement("tr");
       summaryRow.className = "summary-row";
       summaryRow.innerHTML = `
-        <td colspan="4"><strong>Media visible</strong></td>
+        <td colspan="4"><strong>Visible mean</strong></td>
         <td>${{formatMetric(metricMean(rows, "fb_count"), 2)}}</td>
         <td>${{formatMetric(metricMean(rows, "tff_ms"), 1)}}</td>
         <td>${{formatMetric(metricMean(rows, "fd_ms"), 1)}}</td>
@@ -564,8 +564,8 @@ def _build_html(title: str, rows: list[dict[str, object]], source_csv: str) -> s
       renderRows(rows);
     }}
 
-    fillSelect(participantFilter, uniqueValues("participant_id"), "Todos los participantes");
-    fillSelect(videoFilter, uniqueValues("video_id"), "Todos los estimulos");
+    fillSelect(participantFilter, uniqueValues("participant_id"), "All participants");
+    fillSelect(videoFilter, uniqueValues("video_id"), "All stimuli");
     refreshAoiOptions();
 
     participantFilter.addEventListener("change", () => {{
