@@ -82,6 +82,12 @@ Current frozen prompts:
 - `test2Camera360` -> `person. face. bottle. plate.`
 - `test3Lions360` -> `lion. gazelle.`
 
+The frozen archival release that captures the pilot-ready Phase 1 pipeline and
+its companion runtime/analytics state is:
+
+- GitHub release/tag: `v1.0-pilot.1`
+- Zenodo DOI: `10.5281/zenodo.20425675`
+
 ## Scripts
 
 ### 1. Extract frames

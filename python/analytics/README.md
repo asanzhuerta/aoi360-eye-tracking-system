@@ -227,3 +227,16 @@ Key files from that run:
 - `runtime_video_aoi_summary.csv`
 - `runtime_transition_summary.csv`
 - `runtime_aoi_summary_viewer.html`
+
+## Archived pilot release
+
+The frozen pilot release that backs the manuscript and the published Phase 3
+outputs is:
+
+- GitHub release/tag: `v1.0-pilot.1`
+- Zenodo DOI: `10.5281/zenodo.20425675`
+
+Landing pages:
+
+- GitHub repository: `https://github.com/MadaoSurmanito/aoi360-eye-tracking-system`
+- Zenodo record: `https://doi.org/10.5281/zenodo.20425675`

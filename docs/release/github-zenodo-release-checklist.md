@@ -14,9 +14,16 @@ Important note:
   present.
 - GitHub uses `CITATION.cff` for the "Cite this repository" panel.
 
+## Current archived release
+
+The first frozen pilot release is already archived as:
+
+- tag: `v1.0-pilot.1`
+- Zenodo DOI: [10.5281/zenodo.20425675](https://doi.org/10.5281/zenodo.20425675)
+
 ## Recommended release target
 
-Suggested first archival release:
+Suggested first archival release template for future repetitions:
 
 - tag: `v1.0-pilot`
 - GitHub release title: `v1.0-pilot`
@@ -102,6 +109,11 @@ git push origin v1.0-pilot
 1. Insert the DOI into the manuscript `Data Availability` statement.
 2. If needed, update `CITATION.cff` with the exact release version and date.
 3. Optionally create a follow-up patch release if you only need metadata cleanup.
+
+For the current pilot freeze, this step has already been completed with:
+
+- `v1.0-pilot.1`
+- `https://doi.org/10.5281/zenodo.20425675`
 
 ## Suggested `Data Availability` wording
 

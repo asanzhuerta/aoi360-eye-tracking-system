@@ -67,7 +67,12 @@ archival release:
 - `.zenodo.json` for Zenodo release metadata
 - `CITATION.cff` for GitHub's citation panel
 
-The release workflow for freezing `v1.0-pilot` and obtaining a Zenodo DOI is
+The archived pilot release is:
+
+- GitHub release/tag: `v1.0-pilot.1`
+- Zenodo DOI: [10.5281/zenodo.20425675](https://doi.org/10.5281/zenodo.20425675)
+
+The release workflow used to freeze the pilot build and obtain the Zenodo DOI is
 documented in:
 
 - `docs/release/github-zenodo-release-checklist.md`
