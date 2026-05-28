@@ -238,5 +238,5 @@ outputs is:
 
 Landing pages:
 
-- GitHub repository: `https://github.com/MadaoSurmanito/aoi360-eye-tracking-system`
+- GitHub repository: `https://github.com/asanzhuerta/aoi360-eye-tracking-system`
 - Zenodo record: `https://doi.org/10.5281/zenodo.20425675`

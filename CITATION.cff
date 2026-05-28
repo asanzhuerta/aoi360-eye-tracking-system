@@ -27,8 +27,8 @@ authors:
     given-names: "Ismael"
     orcid: "https://orcid.org/0009-0003-2947-0663"
     affiliation: "University of Cadiz"
-repository-code: "https://github.com/MadaoSurmanito/aoi360-eye-tracking-system"
-url: "https://github.com/MadaoSurmanito/aoi360-eye-tracking-system"
+repository-code: "https://github.com/asanzhuerta/aoi360-eye-tracking-system"
+url: "https://github.com/asanzhuerta/aoi360-eye-tracking-system"
 doi: "10.5281/zenodo.20425675"
 version: "v1.0-pilot.1"
 date-released: 2026-05-28

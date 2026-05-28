@@ -55,7 +55,7 @@ Suggested first archival release template for future repetitions:
 2. Open the GitHub integration settings in Zenodo.
 3. Authorise GitHub if prompted.
 4. Enable archiving for:
-   - `MadaoSurmanito/aoi360-eye-tracking-system`
+   - `asanzhuerta/aoi360-eye-tracking-system`
 
 ## Final repository checks before tagging
 
@@ -126,7 +126,7 @@ derived analytics tables required to reproduce the results reported in this
 manuscript are archived at Zenodo:
 \url{https://doi.org/10.5281/zenodo.XXXXXXX}.
 The corresponding development repository is available at
-\url{https://github.com/MadaoSurmanito/aoi360-eye-tracking-system}.
+\url{https://github.com/asanzhuerta/aoi360-eye-tracking-system}.
 ```
 
 ### If participant-level outputs remain restricted
@@ -135,7 +135,7 @@ The corresponding development repository is available at
 \subsection*{Data Availability}
 The source code and reproducible software artefacts are archived at Zenodo:
 \url{https://doi.org/10.5281/zenodo.XXXXXXX}, with the development repository
-available at \url{https://github.com/MadaoSurmanito/aoi360-eye-tracking-system}.
+available at \url{https://github.com/asanzhuerta/aoi360-eye-tracking-system}.
 Due to participant privacy and data-protection constraints, the anonymised
 fixation-level pilot exports are not publicly released in full. Derived analytics
 outputs and additional anonymised materials are available from the corresponding
