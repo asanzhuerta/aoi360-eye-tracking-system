@@ -59,6 +59,19 @@ Pilot materials:
 
 - consent form and print-ready PDFs: `docs/pilot_latex/README.md`
 
+## Citation and archival release
+
+The repository already includes the metadata files needed for a GitHub + Zenodo
+archival release:
+
+- `.zenodo.json` for Zenodo release metadata
+- `CITATION.cff` for GitHub's citation panel
+
+The release workflow for freezing `v1.0-pilot` and obtaining a Zenodo DOI is
+documented in:
+
+- `docs/release/github-zenodo-release-checklist.md`
+
 ## Phase 2 runtime summary
 
 The current Unity runtime supports:

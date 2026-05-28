@@ -36,3 +36,12 @@ Phase 2 is centered on `Phase2_360Playback_VR_sampleRIG` and includes:
 - CSV export for later analysis
 
 See `docs/phase2/` for runtime-specific details.
+
+## Diagram base
+
+A manuscript-ready base for the high-level architecture figure is available at:
+
+- `docs/architecture/system_architecture_overview_base.md`
+
+It includes a Mermaid version of the three-phase pipeline and notes for
+redrawing it cleanly in draw.io / diagrams.net.

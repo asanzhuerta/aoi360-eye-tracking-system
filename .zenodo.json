@@ -1,0 +1,51 @@
+{
+  "title": "AOI360 Eye Tracking System: Offline Dynamic AOI Generation and Runtime Gaze Mapping for 360 Video in Virtual Reality",
+  "description": "Research software for dynamic area-of-interest (AOI) analysis in 360 video, covering offline AOI authoring, Unity/OpenXR runtime execution, and post hoc analytics over fixation-level exports. The repository includes the detector benchmark, frozen pilot corpus support, runtime CSV export, and Phase 3 analytics outputs used in the associated feasibility study.",
+  "upload_type": "software",
+  "creators": [
+    {
+      "name": "Sanz-Huerta, Alejandro",
+      "orcid": "0009-0003-1237-0367",
+      "affiliation": "University of Cadiz"
+    },
+    {
+      "name": "Mota, José Miguel",
+      "orcid": "0000-0002-4980-0549",
+      "affiliation": "University of Cadiz"
+    },
+    {
+      "name": "Carrera-Herrera, Juan José",
+      "orcid": "0009-0005-2916-0280",
+      "affiliation": "University of Cadiz"
+    },
+    {
+      "name": "Baena-Perez, Rubén",
+      "orcid": "0000-0001-7630-6223",
+      "affiliation": "University of Cadiz"
+    },
+    {
+      "name": "Traba Outes, Ismael",
+      "orcid": "0009-0003-2947-0663",
+      "affiliation": "University of Cadiz"
+    }
+  ],
+  "contributors": [
+    {
+      "name": "Sanz-Huerta, Alejandro",
+      "type": "ContactPerson",
+      "orcid": "0009-0003-1237-0367",
+      "affiliation": "University of Cadiz"
+    }
+  ],
+  "keywords": [
+    "360 video",
+    "eye tracking",
+    "areas of interest",
+    "virtual reality",
+    "Unity",
+    "OpenXR",
+    "neuromarketing",
+    "gaze analytics"
+  ],
+  "notes": "Before publishing the archival release, update the Zenodo record with the final release version, licence decision, and any public data-access statement that applies to the participant pilot outputs."
+}
