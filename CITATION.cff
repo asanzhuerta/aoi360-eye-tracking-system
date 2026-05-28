@@ -30,6 +30,7 @@ authors:
 repository-code: "https://github.com/asanzhuerta/aoi360-eye-tracking-system"
 url: "https://github.com/asanzhuerta/aoi360-eye-tracking-system"
 doi: "10.5281/zenodo.20425675"
+license: "Apache-2.0"
 version: "v1.0-pilot.1"
 date-released: 2026-05-28
 keywords:

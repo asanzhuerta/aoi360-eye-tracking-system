@@ -88,6 +88,12 @@ its companion runtime/analytics state is:
 - GitHub release/tag: `v1.0-pilot.1`
 - Zenodo DOI: `10.5281/zenodo.20425675`
 
+## License note
+
+The project source code is released under the Apache License 2.0. Bundled
+third-party models, packages, fonts, Unity samples, and other external assets
+remain subject to their own upstream license terms where applicable.
+
 ## Scripts
 
 ### 1. Extract frames

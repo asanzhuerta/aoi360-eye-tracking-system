@@ -77,6 +77,18 @@ documented in:
 
 - `docs/release/github-zenodo-release-checklist.md`
 
+## License
+
+Unless otherwise stated, the original source code in this repository is released
+under the Apache License 2.0. See [LICENSE](LICENSE).
+
+Important note:
+
+- bundled third-party packages, Unity samples, fonts, and other external assets
+  remain subject to their own upstream license terms where applicable
+- participant materials, archived outputs, and manuscript artefacts may carry
+  additional citation, privacy, or reuse constraints beyond the software license
+
 ## Phase 2 runtime summary
 
 The current Unity runtime supports:

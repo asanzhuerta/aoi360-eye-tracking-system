@@ -34,6 +34,12 @@ build is:
 - GitHub release/tag: `v1.0-pilot.1`
 - Zenodo DOI: `10.5281/zenodo.20425675`
 
+## License note
+
+The project source code is released under the Apache License 2.0. Unity
+packages, bundled samples, fonts, and other third-party assets remain subject
+to their own upstream license terms where applicable.
+
 ## Minimum local setup
 
 1. Open the Unity project under `unity/AOI360Runtime/`.

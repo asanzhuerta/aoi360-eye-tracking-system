@@ -22,6 +22,12 @@ The current package supports:
 11. comparing two AOI sources over the same runtime gaze timeline (`manual` vs `automatic`)
 12. generating a static HTML viewer for AOI-level inspection
 
+## License note
+
+The project source code is released under the Apache License 2.0. Bundled
+third-party packages, archived outputs, and other external materials may remain
+subject to their own upstream or publication-specific terms where applicable.
+
 Important note:
 
 - the current input is the runtime fixation-level export, not a continuous raw gaze sample stream

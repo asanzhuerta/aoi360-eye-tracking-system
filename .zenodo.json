@@ -2,6 +2,7 @@
   "title": "AOI360 Eye Tracking System: Offline Dynamic AOI Generation and Runtime Gaze Mapping for 360 Video in Virtual Reality",
   "description": "Research software for dynamic area-of-interest (AOI) analysis in 360 video, covering offline AOI authoring, Unity/OpenXR runtime execution, and post hoc analytics over fixation-level exports. The repository includes the detector benchmark, frozen pilot corpus support, runtime CSV export, and Phase 3 analytics outputs used in the associated feasibility study.",
   "upload_type": "software",
+  "license": "apache-2.0",
   "creators": [
     {
       "name": "Sanz-Huerta, Alejandro",
@@ -47,5 +48,5 @@
     "neuromarketing",
     "gaze analytics"
   ],
-  "notes": "Before publishing the archival release, update the Zenodo record with the final release version, licence decision, and any public data-access statement that applies to the participant pilot outputs."
+  "notes": "The project source code is released under the Apache License 2.0. Bundled third-party packages, fonts, samples, and other external assets remain subject to their own upstream license terms where applicable."
 }

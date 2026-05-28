@@ -44,10 +44,13 @@ Suggested first archival release template for future repetitions:
   analytics outputs and document the restriction in the paper
 
 3. Metadata decisions still required
-- final software/data licence
 - whether anonymised participant-level CSV exports are public or available on
   request
 - final public DOI/URL to insert into the paper
+
+The software licence is now fixed as:
+
+- Apache License 2.0 (`Apache-2.0`)
 
 ## Zenodo setup
 
@@ -61,8 +64,7 @@ Suggested first archival release template for future repetitions:
 
 1. Review `.zenodo.json`
 - update title/description only if the release scope changed
-- if a final licence has been decided, also add it in the Zenodo deposit or the
-  metadata file
+- keep the licence field aligned with the repository `LICENSE` file
 
 2. Review `CITATION.cff`
 - if you want the GitHub citation panel to show a release version, add:
