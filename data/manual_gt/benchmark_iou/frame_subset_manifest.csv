@@ -1,0 +1,16 @@
+video_id,frame_file,scene_group,target_labels,selection_notes,subset_frame_path
+test1Camera360,frame_000030.jpg,camera_centric,person|face|laptop|screen,Early frame with laptop and face visibility,data/manual_gt/benchmark_iou/frame_subset/test1Camera360/frame_000030.jpg
+test1Camera360,frame_000120.jpg,camera_centric,person|face|laptop|screen,Early-mid frame candidate for stable desk AOIs,data/manual_gt/benchmark_iou/frame_subset/test1Camera360/frame_000120.jpg
+test1Camera360,frame_000210.jpg,camera_centric,person|face|laptop|screen,Middle frame candidate,data/manual_gt/benchmark_iou/frame_subset/test1Camera360/frame_000210.jpg
+test1Camera360,frame_000270.jpg,camera_centric,person|face|laptop|screen,Late-mid frame candidate,data/manual_gt/benchmark_iou/frame_subset/test1Camera360/frame_000270.jpg
+test1Camera360,frame_000360.jpg,camera_centric,person|face|laptop|screen,Late frame candidate,data/manual_gt/benchmark_iou/frame_subset/test1Camera360/frame_000360.jpg
+test2Camera360,frame_000060.jpg,camera_centric,person|face|bottle|plate,Early frame with table objects,data/manual_gt/benchmark_iou/frame_subset/test2Camera360/frame_000060.jpg
+test2Camera360,frame_000240.jpg,camera_centric,person|face|bottle|plate,Early-mid frame candidate,data/manual_gt/benchmark_iou/frame_subset/test2Camera360/frame_000240.jpg
+test2Camera360,frame_000420.jpg,camera_centric,person|face|bottle|plate,Middle frame candidate,data/manual_gt/benchmark_iou/frame_subset/test2Camera360/frame_000420.jpg
+test2Camera360,frame_000600.jpg,camera_centric,person|face|bottle|plate,Late-mid frame candidate,data/manual_gt/benchmark_iou/frame_subset/test2Camera360/frame_000600.jpg
+test2Camera360,frame_000780.jpg,camera_centric,person|face|bottle|plate,Late frame candidate,data/manual_gt/benchmark_iou/frame_subset/test2Camera360/frame_000780.jpg
+test3Lions360,frame_000090.jpg,wildlife,lion|gazelle,Early wildlife frame candidate,data/manual_gt/benchmark_iou/frame_subset/test3Lions360/frame_000090.jpg
+test3Lions360,frame_000270.jpg,wildlife,lion|gazelle,Early-mid wildlife frame candidate,data/manual_gt/benchmark_iou/frame_subset/test3Lions360/frame_000270.jpg
+test3Lions360,frame_000450.jpg,wildlife,lion|gazelle,Middle wildlife frame candidate,data/manual_gt/benchmark_iou/frame_subset/test3Lions360/frame_000450.jpg
+test3Lions360,frame_000630.jpg,wildlife,lion|gazelle,Late-mid wildlife frame candidate,data/manual_gt/benchmark_iou/frame_subset/test3Lions360/frame_000630.jpg
+test3Lions360,frame_000810.jpg,wildlife,lion|gazelle,Late wildlife frame candidate,data/manual_gt/benchmark_iou/frame_subset/test3Lions360/frame_000810.jpg
