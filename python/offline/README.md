@@ -18,6 +18,7 @@ The pipeline now also includes:
 - a compact Tkinter GUI that lets an operator select a video, launch preprocessing, and monitor progress and logs live
 - detector selection between `grounding_dino` and `yolo_world` while preserving the same detections CSV schema for the AOI builders
 - a detector benchmark entry point so both models can be compared empirically on the same extracted 360-video frames
+- a local OpenCV annotator and IoU validation script for manual detector-box checks on the frozen test corpus
 - CUDA-aware runtime inspection so the preprocessing stage can report whether it is running on `cpu` or `cuda`
 - runtime-oriented exports with:
   - sparse AOI keyframes every `30` video frames by default
@@ -93,6 +94,21 @@ its companion runtime/analytics state is:
 The project source code is released under the Apache License 2.0. Bundled
 third-party models, packages, fonts, Unity samples, and other external assets
 remain subject to their own upstream license terms where applicable.
+
+## Preliminary spatial IoU validation
+
+For the frozen participant-facing test corpus, the offline package also includes
+a small manual-vs-detector validation loop built around 15 copied key frames:
+
+- `python/offline/scripts/annotate_manual_boxes_opencv.py`
+- `python/offline/scripts/verify_spatial_iou.py`
+- `data/manual_gt/benchmark_iou/manual_boxes.csv`
+
+The copied JPG subset itself is kept local and ignored by Git, while the
+manifest and hand-drawn box CSV remain tracked. The validation exports
+timestamped summaries under:
+
+- `data/exports/benchmarks/spatial_iou/`
 
 ## Scripts
 

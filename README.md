@@ -14,6 +14,7 @@ The repository is now in a usable end-to-end state for the pilot workflow:
 - a frozen three-video pilot corpus is supported in the runtime
 - Unity exports fixation-level CSVs into `data/exports/csv/`
 - Phase 3 generates participant-, session-, video-, AOI-, and transition-level summaries
+- a preliminary manual-vs-detector IoU validation scaffold is available for the frozen test corpus
 - the pilot paper and participant materials live under `docs/`
 
 Frozen pilot stimuli:
@@ -28,6 +29,7 @@ Frozen pilot stimuli:
 - `unity/AOI360Runtime/` -> Phase 2 Unity runtime
 - `python/analytics/` -> Phase 3 analytics package
 - `data/` -> input videos, processed assets, runtime exports, and analytics outputs
+- `data/manual_gt/benchmark_iou/` -> manual annotation subset and IoU validation inputs
 - `docs/phase2/` -> Unity/runtime operational documentation
 - `docs/pilot_latex/` -> consent form and operator sheet for pilot sessions
 - `docs/latex/` -> scientific manuscript workspace
@@ -71,6 +73,13 @@ The archived pilot release is:
 
 - GitHub release/tag: `v1.0-pilot.1`
 - Zenodo DOI: [10.5281/zenodo.20425675](https://doi.org/10.5281/zenodo.20425675)
+
+Important note:
+
+- `v1.0-pilot.1` captures the frozen pilot workflow and its archived outputs.
+- If the manuscript is updated to cite the later preliminary spatial IoU
+  validation added in the development repository, cut a new archival release and
+  update the DOI referenced by the paper accordingly.
 
 The release workflow used to freeze the pilot build and obtain the Zenodo DOI is
 documented in:
@@ -148,6 +157,22 @@ Key files from that run:
 - `runtime_video_aoi_summary.csv`
 - `runtime_transition_summary.csv`
 - `runtime_aoi_summary_viewer.html`
+
+## Preliminary spatial IoU validation
+
+The repository also contains a small manual ground-truth workflow for checking
+detector boxes against hand-drawn boxes on 15 key frames from the frozen test
+corpus:
+
+- `data/manual_gt/benchmark_iou/frame_subset/`
+- `data/manual_gt/benchmark_iou/frame_subset_manifest.csv`
+- `data/manual_gt/benchmark_iou/manual_boxes.csv`
+- `python/offline/scripts/annotate_manual_boxes_opencv.py`
+- `python/offline/scripts/verify_spatial_iou.py`
+
+Running the IoU validation writes timestamped summaries under:
+
+- `data/exports/benchmarks/spatial_iou/`
 
 ## Notes
 

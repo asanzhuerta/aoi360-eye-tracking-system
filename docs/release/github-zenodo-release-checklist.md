@@ -78,6 +78,15 @@ The software licence is now fixed as:
   - `phase3-html-viewer.zip`
   - `paper-figures-and-tables.zip`
   - `anonymized-pilot-data.zip` if allowed
+  - `spatial-iou-validation-assets.zip` if the paper cites the preliminary
+    manual-vs-detector IoU validation
+
+For the current IoU validation workflow, that extra release asset should bundle:
+
+- `data/manual_gt/benchmark_iou/frame_subset/` (the 15 copied labeled frames)
+- `data/manual_gt/benchmark_iou/frame_subset_manifest.csv`
+- `data/manual_gt/benchmark_iou/manual_boxes.csv`
+- the timestamped `data/exports/benchmarks/spatial_iou/<timestamp>/` outputs
 
 ## GitHub release steps
 
