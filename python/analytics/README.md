@@ -239,10 +239,10 @@ Key files from that run:
 The frozen pilot release that backs the manuscript and the published Phase 3
 outputs is:
 
-- GitHub release/tag: `v1.0-pilot.1`
-- Zenodo DOI: `10.5281/zenodo.20425675`
+- GitHub release/tag: `v1.0-pilot.2`
+- Zenodo DOI: `10.5281/zenodo.20486031`
 
 Landing pages:
 
 - GitHub repository: `https://github.com/asanzhuerta/aoi360-eye-tracking-system`
-- Zenodo record: `https://doi.org/10.5281/zenodo.20425675`
+- Zenodo record: `https://doi.org/10.5281/zenodo.20486031`

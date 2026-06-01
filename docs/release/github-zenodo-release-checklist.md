@@ -16,10 +16,10 @@ Important note:
 
 ## Current archived release
 
-The first frozen pilot release is already archived as:
+The current frozen pilot release is already archived as:
 
-- tag: `v1.0-pilot.1`
-- Zenodo DOI: [10.5281/zenodo.20425675](https://doi.org/10.5281/zenodo.20425675)
+- tag: `v1.0-pilot.2`
+- Zenodo DOI: [10.5281/zenodo.20486031](https://doi.org/10.5281/zenodo.20486031)
 
 ## Recommended release target
 
@@ -130,8 +130,8 @@ git push origin v1.0-pilot
 
 For the current pilot freeze, this step has already been completed with:
 
-- `v1.0-pilot.1`
-- `https://doi.org/10.5281/zenodo.20425675`
+- `v1.0-pilot.2`
+- `https://doi.org/10.5281/zenodo.20486031`
 
 ## Suggested `Data Availability` wording
 

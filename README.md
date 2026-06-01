@@ -72,16 +72,14 @@ archival release:
 
 The archived pilot release is:
 
-- GitHub release/tag: `v1.0-pilot.1`
-- Zenodo DOI: [10.5281/zenodo.20425675](https://doi.org/10.5281/zenodo.20425675)
+- GitHub release/tag: `v1.0-pilot.2`
+- Zenodo DOI: [10.5281/zenodo.20486031](https://doi.org/10.5281/zenodo.20486031)
 
 Important note:
 
-- `v1.0-pilot.1` captures the frozen pilot workflow and its archived outputs.
-- If the manuscript is updated to cite the later preliminary spatial IoU
-  validation and the failure-taxonomy geometry diagnostics added in the
-  development repository, cut a new archival release and update the DOI
-  referenced by the paper accordingly.
+- `v1.0-pilot.2` captures the frozen pilot workflow, the preliminary spatial
+  IoU validation, and the failure-taxonomy geometry diagnostics cited by the
+  manuscript.
 
 The release workflow used to freeze the pilot build and obtain the Zenodo DOI is
 documented in:

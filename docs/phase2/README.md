@@ -31,8 +31,8 @@ The build used for pilot collection is repository-local:
 The frozen archival release that corresponds to this participant-facing pilot
 build is:
 
-- GitHub release/tag: `v1.0-pilot.1`
-- Zenodo DOI: `10.5281/zenodo.20425675`
+- GitHub release/tag: `v1.0-pilot.2`
+- Zenodo DOI: `10.5281/zenodo.20486031`
 
 ## License note
 
