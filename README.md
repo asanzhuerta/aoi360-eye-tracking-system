@@ -30,6 +30,7 @@ Frozen pilot stimuli:
 - `python/analytics/` -> Phase 3 analytics package
 - `data/` -> input videos, processed assets, runtime exports, and analytics outputs
 - `data/manual_gt/benchmark_iou/` -> manual annotation subset and IoU validation inputs
+- `python/offline/scripts/diagnose_failure_taxonomy.py` -> geometry audit for the frozen test corpus
 - `docs/phase2/` -> Unity/runtime operational documentation
 - `docs/pilot_latex/` -> consent form and operator sheet for pilot sessions
 - `docs/latex/` -> scientific manuscript workspace
@@ -78,8 +79,9 @@ Important note:
 
 - `v1.0-pilot.1` captures the frozen pilot workflow and its archived outputs.
 - If the manuscript is updated to cite the later preliminary spatial IoU
-  validation added in the development repository, cut a new archival release and
-  update the DOI referenced by the paper accordingly.
+  validation and the failure-taxonomy geometry diagnostics added in the
+  development repository, cut a new archival release and update the DOI
+  referenced by the paper accordingly.
 
 The release workflow used to freeze the pilot build and obtain the Zenodo DOI is
 documented in:
@@ -173,6 +175,27 @@ corpus:
 Running the IoU validation writes timestamped summaries under:
 
 - `data/exports/benchmarks/spatial_iou/`
+
+## Failure-taxonomy diagnostics
+
+To support the manuscript discussion of why `test3Lions360` underperforms the
+camera-centric pilot stimuli, the repository also includes a compact geometry
+diagnostic over the frozen test metadata:
+
+- `python/offline/scripts/diagnose_failure_taxonomy.py`
+
+The script summarises:
+
+- AOI count per keyframe
+- total AOI bounding-box coverage per keyframe
+- small-target frequency (`area < 1%`)
+- seam-proximity frequency (`Δu <= 0.05`)
+- polar-latitude frequency (`|elevation| > 60°`)
+- optional joins with `runtime_video_summary.csv` and `runtime_video_aoi_summary.csv`
+
+The outputs are written to:
+
+- `data/exports/diagnostics/failure_taxonomy/`
 
 ## Notes
 

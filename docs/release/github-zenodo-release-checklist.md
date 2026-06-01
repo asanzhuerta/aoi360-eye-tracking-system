@@ -80,6 +80,8 @@ The software licence is now fixed as:
   - `anonymized-pilot-data.zip` if allowed
   - `spatial-iou-validation-assets.zip` if the paper cites the preliminary
     manual-vs-detector IoU validation
+  - `failure-taxonomy-diagnostics.zip` if the paper cites the geometry audit of
+    the frozen test corpus
 
 For the current IoU validation workflow, that extra release asset should bundle:
 
@@ -87,6 +89,11 @@ For the current IoU validation workflow, that extra release asset should bundle:
 - `data/manual_gt/benchmark_iou/frame_subset_manifest.csv`
 - `data/manual_gt/benchmark_iou/manual_boxes.csv`
 - the timestamped `data/exports/benchmarks/spatial_iou/<timestamp>/` outputs
+
+For the failure-taxonomy audit, the companion release asset should bundle:
+
+- the timestamped `data/exports/diagnostics/failure_taxonomy/<timestamp>/` outputs
+- the exact manuscript notes, figures, or tables that cite those diagnostics
 
 ## GitHub release steps
 

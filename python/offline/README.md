@@ -19,6 +19,7 @@ The pipeline now also includes:
 - detector selection between `grounding_dino` and `yolo_world` while preserving the same detections CSV schema for the AOI builders
 - a detector benchmark entry point so both models can be compared empirically on the same extracted 360-video frames
 - a local OpenCV annotator and IoU validation script for manual detector-box checks on the frozen test corpus
+- a failure-taxonomy diagnostic script that summarises sparse-target, seam, and track-fragility conditions in the frozen test corpus
 - CUDA-aware runtime inspection so the preprocessing stage can report whether it is running on `cpu` or `cuda`
 - runtime-oriented exports with:
   - sparse AOI keyframes every `30` video frames by default
@@ -109,6 +110,26 @@ manifest and hand-drawn box CSV remain tracked. The validation exports
 timestamped summaries under:
 
 - `data/exports/benchmarks/spatial_iou/`
+
+## Failure-taxonomy diagnostics
+
+The offline package also includes a compact geometry audit for the frozen test
+corpus:
+
+- `python/offline/scripts/diagnose_failure_taxonomy.py`
+
+It reads the exported AOI manifests and keyframe JSON files, computes:
+
+- mean AOI count per keyframe,
+- total AOI bbox coverage per keyframe,
+- small-target frequency,
+- seam-proximity frequency,
+- polar-latitude frequency,
+
+and can optionally join those descriptors with the pilot analytics summaries for
+the same videos. The outputs are written under:
+
+- `data/exports/diagnostics/failure_taxonomy/`
 
 ## Scripts
 
