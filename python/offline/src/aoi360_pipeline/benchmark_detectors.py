@@ -17,6 +17,7 @@ from time import perf_counter
 
 import pandas as pd
 
+from aoi360_pipeline.detection_contract import list_frame_paths
 from aoi360_pipeline.detectors import (
     SUPPORTED_DETECTORS,
     detect_frames_with_backend,
@@ -24,9 +25,12 @@ from aoi360_pipeline.detectors import (
     normalize_detector_name,
     resolve_default_model_id,
 )
-from aoi360_pipeline.rebuild_runtime_assets import find_repo_root
-from aoi360_pipeline.runtime_environment import TorchRuntimeSummary, inspect_torch_runtime
-
+from aoi360_pipeline.paths import find_repo_root
+from aoi360_pipeline.prompts import parse_video_prompt_overrides
+from aoi360_pipeline.runtime_environment import (
+    TorchRuntimeSummary,
+    inspect_torch_runtime,
+)
 
 DEFAULT_TEXT_PROMPT = "person. face. bottle. screen. product."
 DEFAULT_OUTPUT_ROOT = Path("data") / "exports" / "benchmarks"
@@ -40,51 +44,6 @@ class BenchmarkDataset:
     frame_count: int
     temp_dir_to_cleanup: Path | None = None
 
-
-def parse_video_prompt_overrides(
-    *,
-    prompt_overrides: list[str] | None = None,
-    prompt_file: str | Path | None = None,
-) -> dict[str, str]:
-    """Resolve per-video prompt overrides from CLI pairs and/or a JSON file."""
-
-    resolved_overrides: dict[str, str] = {}
-
-    if prompt_file is not None:
-        prompt_file_path = Path(prompt_file).resolve()
-        if not prompt_file_path.exists():
-            raise FileNotFoundError(f"Video prompt mapping file not found: {prompt_file_path}")
-
-        loaded_mapping = json.loads(prompt_file_path.read_text(encoding="utf-8"))
-        if not isinstance(loaded_mapping, dict):
-            raise ValueError("The video prompt mapping file must contain a JSON object of video_id -> prompt.")
-
-        for video_id, prompt in loaded_mapping.items():
-            if not isinstance(video_id, str) or not isinstance(prompt, str):
-                raise ValueError("Every video prompt mapping entry must be a string key and a string value.")
-            normalized_video_id = video_id.strip()
-            normalized_prompt = prompt.strip()
-            if not normalized_video_id:
-                raise ValueError("Video prompt mapping keys cannot be empty.")
-            if not normalized_prompt:
-                raise ValueError(f"Prompt override for '{normalized_video_id}' cannot be empty.")
-            resolved_overrides[normalized_video_id] = normalized_prompt
-
-    for override in prompt_overrides or []:
-        if "=" not in override:
-            raise ValueError(
-                "Each --video-prompt override must follow the format video_id=prompt."
-            )
-        video_id, prompt = override.split("=", 1)
-        normalized_video_id = video_id.strip()
-        normalized_prompt = prompt.strip()
-        if not normalized_video_id:
-            raise ValueError("Video id cannot be empty in --video-prompt overrides.")
-        if not normalized_prompt:
-            raise ValueError(f"Prompt override for '{normalized_video_id}' cannot be empty.")
-        resolved_overrides[normalized_video_id] = normalized_prompt
-
-    return resolved_overrides
 
 
 def discover_frames_directories(
@@ -118,7 +77,7 @@ def select_frame_paths(
     """Pick a deterministic subset of extracted frames for benchmarking."""
 
     frames_dir = Path(frames_dir)
-    frame_paths = sorted([*frames_dir.glob("*.jpg"), *frames_dir.glob("*.jpeg"), *frames_dir.glob("*.png")])
+    frame_paths = list_frame_paths(frames_dir)
     if not frame_paths:
         raise RuntimeError(f"No extracted frames were found in: {frames_dir}")
 
@@ -167,7 +126,7 @@ def prepare_benchmark_dataset(
         limit_frames=limit_frames,
     )
 
-    all_frame_paths = sorted([*original_frames_dir.glob("*.jpg"), *original_frames_dir.glob("*.jpeg"), *original_frames_dir.glob("*.png")])
+    all_frame_paths = list_frame_paths(original_frames_dir)
     needs_subset_directory = len(selected_paths) != len(all_frame_paths)
 
     if not needs_subset_directory:

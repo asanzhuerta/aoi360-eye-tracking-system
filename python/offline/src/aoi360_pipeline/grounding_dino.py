@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """Run Grounding DINO over extracted frames and normalize the detections output."""
 
 import argparse
@@ -6,38 +7,33 @@ import inspect
 import os
 import warnings
 from concurrent.futures import ThreadPoolExecutor
-from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
-from threading import RLock
 
 import pandas as pd
 
 from aoi360_pipeline.cache_roots import (
     configure_huggingface_cache_environment,
-    iter_huggingface_cache_roots,
-    resolve_huggingface_snapshot_path,
 )
-from aoi360_pipeline.detection_contract import DETECTION_COLUMNS, get_frame_index
+from aoi360_pipeline.callbacks import (
+    LogCallback,
+    ProgressCallback,
+    emit_log,
+    emit_progress,
+)
+from aoi360_pipeline.detection_contract import (
+    DETECTION_COLUMNS,
+    list_frame_paths,
+)
+from aoi360_pipeline.hf_backend import (
+    PretrainedAssetCache,
+    is_cuda_oom,
+    prepare_frame,
+)
 from aoi360_pipeline.runtime_environment import inspect_torch_runtime
 
-
 DEFAULT_MODEL_ID = "IDEA-Research/grounding-dino-tiny"
-ProgressCallback = Callable[[int, int, str], None]
-LogCallback = Callable[[str], None]
-_PROCESSOR_CACHE: dict[tuple[str], object] = {}
-_MODEL_CACHE: dict[tuple[str, str, str], object] = {}
-_CACHE_LOCK = RLock()
+_ASSETS = PretrainedAssetCache(display_name="Grounding DINO", log_prefix="[detect_grounding_dino]")
 
-
-@dataclass(frozen=True)
-class PreparedFrame:
-    """Carry one frame through the batched inference pipeline."""
-
-    frame_path: Path
-    frame_index: int
-    image: object
-    target_size: tuple[int, int]
 
 def _lazy_import_transformers_stack():
     # Delay the heavy ML imports until the command actually runs so simple
@@ -60,125 +56,6 @@ def _lazy_import_transformers_stack():
     return torch, Image, tqdm, AutoModelForZeroShotObjectDetection, AutoProcessor
 
 
-def _emit_log(log_callback: LogCallback | None, message: str) -> None:
-    if log_callback is not None:
-        log_callback(message)
-    else:
-        print(message)
-
-
-def _emit_progress(
-    progress_callback: ProgressCallback | None,
-    current: int,
-    total: int,
-    message: str,
-) -> None:
-    if progress_callback is not None:
-        progress_callback(current, total, message)
-
-
-def _load_pretrained_asset(pretrained_factory, model_id: str, *, log_callback: LogCallback | None = None, **kwargs):
-    """Prefer the local Hugging Face cache, then fall back to remote resolution.
-
-    This keeps repeated preprocessing and benchmarking runs reproducible when
-    the local environment is sandboxed or temporarily offline, while still
-    allowing first-time model downloads on fully connected machines.
-    """
-
-    primary_cache_root = configure_huggingface_cache_environment()
-    local_failures: list[str] = []
-    for cache_root in iter_huggingface_cache_roots():
-        snapshot_path = resolve_huggingface_snapshot_path(model_id, cache_root)
-        if snapshot_path is not None:
-            snapshot_kwargs = dict(kwargs)
-            snapshot_kwargs["local_files_only"] = True
-            try:
-                asset = pretrained_factory.from_pretrained(str(snapshot_path), **snapshot_kwargs)
-                _emit_log(log_callback, f"[detect_grounding_dino] Loaded assets from cached snapshot: {snapshot_path}")
-                return asset
-            except Exception as local_exception:
-                local_failures.append(f"{snapshot_path} -> {local_exception}")
-
-        local_kwargs = dict(kwargs)
-        local_kwargs["cache_dir"] = str(cache_root)
-        local_kwargs["local_files_only"] = True
-        try:
-            asset = pretrained_factory.from_pretrained(model_id, **local_kwargs)
-            _emit_log(log_callback, f"[detect_grounding_dino] Loaded assets from local cache root: {cache_root}")
-            return asset
-        except Exception as local_exception:
-            local_failures.append(f"{cache_root} -> {local_exception}")
-
-    _emit_log(
-        log_callback,
-        (
-            "[detect_grounding_dino] Local cache lookup failed; falling back to remote resolution. "
-            f"Tried: {' | '.join(local_failures)}"
-        ),
-    )
-
-    try:
-        return pretrained_factory.from_pretrained(model_id, cache_dir=str(primary_cache_root), **kwargs)
-    except Exception as remote_exception:
-        raise RuntimeError(
-            "Grounding DINO could not be loaded from the local cache or from the remote Hugging Face repository. "
-            "If the model was already downloaded before, check that the cache is still available."
-        ) from remote_exception
-
-
-def _get_cached_processor(
-    *,
-    processor_factory,
-    model_id: str,
-    log_callback: LogCallback | None,
-):
-    cache_key = (model_id,)
-    with _CACHE_LOCK:
-        cached_processor = _PROCESSOR_CACHE.get(cache_key)
-
-    if cached_processor is not None:
-        _emit_log(log_callback, f"[detect_grounding_dino] Reusing cached processor for: {model_id}")
-        return cached_processor
-
-    built_processor = _load_pretrained_asset(processor_factory, model_id, log_callback=log_callback)
-    with _CACHE_LOCK:
-        cached_processor = _PROCESSOR_CACHE.setdefault(cache_key, built_processor)
-    return cached_processor
-
-
-def _get_cached_model(
-    *,
-    model_factory,
-    model_id: str,
-    device: str,
-    precision: str,
-    model_kwargs: dict[str, object],
-    log_callback: LogCallback | None,
-):
-    cache_key = (model_id, device, precision)
-    with _CACHE_LOCK:
-        cached_model = _MODEL_CACHE.get(cache_key)
-
-    if cached_model is not None:
-        cached_model.eval()
-        _emit_log(log_callback, f"[detect_grounding_dino] Reusing cached model for: {model_id} [{device}, {precision}]")
-        return cached_model
-
-    built_model = _load_pretrained_asset(
-        model_factory,
-        model_id,
-        log_callback=log_callback,
-        **model_kwargs,
-    ).to(device)
-    built_model.eval()
-
-    with _CACHE_LOCK:
-        cached_model = _MODEL_CACHE.setdefault(cache_key, built_model)
-
-    cached_model.eval()
-    return cached_model
-
-
 def prefetch_model_assets(
     model_id: str = DEFAULT_MODEL_ID,
     *,
@@ -195,18 +72,18 @@ def prefetch_model_assets(
         resolved_precision = "fp32"
 
     cache_root = configure_huggingface_cache_environment()
-    _emit_log(log_callback, f"[detect_grounding_dino] Prefetching assets into local cache: {cache_root}")
+    emit_log(log_callback, f"[detect_grounding_dino] Prefetching assets into local cache: {cache_root}")
 
     model_kwargs = {}
     if device == "cuda" and resolved_precision == "fp16":
         model_kwargs["dtype"] = torch.float16
 
-    _get_cached_processor(
+    _ASSETS.get_processor(
         processor_factory=AutoProcessor,
         model_id=model_id,
         log_callback=log_callback,
     )
-    _get_cached_model(
+    _ASSETS.get_model(
         model_factory=AutoModelForZeroShotObjectDetection,
         model_id=model_id,
         device=device,
@@ -267,62 +144,6 @@ def _post_process_grounding_dino_results(
         return post_process(**kwargs)
 
 
-def _resolve_resampling_filter(image_module):
-    try:
-        return image_module.Resampling.BICUBIC
-    except AttributeError:  # pragma: no cover - Pillow compatibility shim
-        return image_module.BICUBIC
-
-
-def _resize_for_inference(image, image_module, max_width: int | None, max_height: int | None):
-    width, height = image.size
-    scale = 1.0
-
-    if max_width is not None and max_width > 0 and width > max_width:
-        scale = min(scale, max_width / width)
-    if max_height is not None and max_height > 0 and height > max_height:
-        scale = min(scale, max_height / height)
-
-    if scale >= 1.0:
-        return image
-
-    resized_width = max(1, int(round(width * scale)))
-    resized_height = max(1, int(round(height * scale)))
-    return image.resize((resized_width, resized_height), _resolve_resampling_filter(image_module))
-
-
-def _is_cuda_oom(exception: Exception, torch_module) -> bool:
-    if hasattr(torch_module, "OutOfMemoryError") and isinstance(exception, torch_module.OutOfMemoryError):
-        return True
-
-    message = str(exception).lower()
-    return "out of memory" in message and "cuda" in message
-
-
-def _prepare_frame(
-    frame_path: Path,
-    image_module,
-    inference_max_width: int | None,
-    inference_max_height: int | None,
-) -> PreparedFrame:
-    with image_module.open(frame_path) as image_handle:
-        image = image_handle.convert("RGB")
-        target_size = (image.height, image.width)
-        inference_image = _resize_for_inference(
-            image=image,
-            image_module=image_module,
-            max_width=inference_max_width,
-            max_height=inference_max_height,
-        )
-
-    return PreparedFrame(
-        frame_path=frame_path,
-        frame_index=get_frame_index(frame_path),
-        image=inference_image,
-        target_size=target_size,
-    )
-
-
 def detect_frames(
     frames_dir: str | Path,
     output_csv: str | Path,
@@ -372,14 +193,14 @@ def detect_frames(
     if device != "cuda":
         resolved_precision = "fp32"
 
-    _emit_log(log_callback, f"[detect_grounding_dino] Runtime: {runtime_summary.short_label}")
-    _emit_log(log_callback, f"[detect_grounding_dino] Using device: {device}")
-    _emit_log(log_callback, f"[detect_grounding_dino] Model: {model_id}")
-    _emit_log(log_callback, f"[detect_grounding_dino] Local Hugging Face cache: {cache_root}")
-    _emit_log(log_callback, f"[detect_grounding_dino] Batch size: {effective_batch_size}")
-    _emit_log(log_callback, f"[detect_grounding_dino] Precision: {resolved_precision}")
+    emit_log(log_callback, f"[detect_grounding_dino] Runtime: {runtime_summary.short_label}")
+    emit_log(log_callback, f"[detect_grounding_dino] Using device: {device}")
+    emit_log(log_callback, f"[detect_grounding_dino] Model: {model_id}")
+    emit_log(log_callback, f"[detect_grounding_dino] Local Hugging Face cache: {cache_root}")
+    emit_log(log_callback, f"[detect_grounding_dino] Batch size: {effective_batch_size}")
+    emit_log(log_callback, f"[detect_grounding_dino] Precision: {resolved_precision}")
     if inference_max_width or inference_max_height:
-        _emit_log(
+        emit_log(
             log_callback,
             (
                 "[detect_grounding_dino] Downscaling frames for inference to at most "
@@ -398,12 +219,12 @@ def detect_frames(
     if device == "cuda" and resolved_precision == "fp16":
         model_kwargs["dtype"] = torch.float16
 
-    processor = _get_cached_processor(
+    processor = _ASSETS.get_processor(
         processor_factory=AutoProcessor,
         model_id=model_id,
         log_callback=log_callback,
     )
-    model = _get_cached_model(
+    model = _ASSETS.get_model(
         model_factory=AutoModelForZeroShotObjectDetection,
         model_id=model_id,
         device=device,
@@ -412,13 +233,13 @@ def detect_frames(
         log_callback=log_callback,
     )
 
-    frame_paths = sorted([*frames_dir.glob("*.jpg"), *frames_dir.glob("*.jpeg"), *frames_dir.glob("*.png")])
+    frame_paths = list_frame_paths(frames_dir)
     if not frame_paths:
         raise RuntimeError(f"No images found in: {frames_dir}")
 
     rows: list[dict[str, object]] = []
     total_frames = len(frame_paths)
-    _emit_progress(progress_callback, 0, total_frames, "Loading Grounding DINO and preparing detections.")
+    emit_progress(progress_callback, 0, total_frames, "Loading Grounding DINO and preparing detections.")
 
     def _collect_rows(
         *,
@@ -428,7 +249,7 @@ def detect_frames(
         clear_cuda_cache_between_batches: bool,
     ) -> list[dict[str, object]]:
         collected_rows: list[dict[str, object]] = []
-        image_loader = lambda path: _prepare_frame(
+        image_loader = lambda path: prepare_frame(
             frame_path=path,
             image_module=Image,
             inference_max_width=max_width_for_run,
@@ -499,7 +320,7 @@ def detect_frames(
                         )
 
                     processed_index += 1
-                    _emit_progress(
+                    emit_progress(
                         progress_callback,
                         processed_index,
                         total_frames,
@@ -523,7 +344,7 @@ def detect_frames(
         safe_max_height = 640 if inference_max_height is None else min(inference_max_height, 640)
         should_retry_with_safe_cuda = (
             device == "cuda" and
-            _is_cuda_oom(exception, torch) and
+            is_cuda_oom(exception, torch) and
             (
                 effective_batch_size > 1 or
                 inference_max_width is None or inference_max_width > safe_max_width or
@@ -533,7 +354,7 @@ def detect_frames(
         if not should_retry_with_safe_cuda:
             raise
 
-        _emit_log(
+        emit_log(
             log_callback,
             (
                 "[detect_grounding_dino] CUDA inference failed with the current settings. "
@@ -541,12 +362,12 @@ def detect_frames(
                 f"max_height={safe_max_height}, precision={resolved_precision}."
             ),
         )
-        _emit_log(log_callback, f"[detect_grounding_dino] Original error: {type(exception).__name__}: {exception}")
+        emit_log(log_callback, f"[detect_grounding_dino] Original error: {type(exception).__name__}: {exception}")
 
         if hasattr(torch.cuda, "empty_cache"):
             torch.cuda.empty_cache()
 
-        _emit_progress(progress_callback, 0, total_frames, "Retrying Grounding DINO with safer CUDA settings.")
+        emit_progress(progress_callback, 0, total_frames, "Retrying Grounding DINO with safer CUDA settings.")
         rows = _collect_rows(
             batch_size_for_run=1,
             max_width_for_run=safe_max_width,
@@ -557,9 +378,9 @@ def detect_frames(
     detections = pd.DataFrame(rows, columns=DETECTION_COLUMNS)
     detections.to_csv(output_csv, index=False)
 
-    _emit_log(log_callback, f"[detect_grounding_dino] Frames processed: {len(frame_paths)}")
-    _emit_log(log_callback, f"[detect_grounding_dino] Detections exported: {len(detections)}")
-    _emit_log(log_callback, f"[detect_grounding_dino] CSV written to: {output_csv}")
+    emit_log(log_callback, f"[detect_grounding_dino] Frames processed: {len(frame_paths)}")
+    emit_log(log_callback, f"[detect_grounding_dino] Detections exported: {len(detections)}")
+    emit_log(log_callback, f"[detect_grounding_dino] CSV written to: {output_csv}")
     return detections
 
 

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import argparse
 
-from aoi360_pipeline.detectors import SUPPORTED_DETECTORS, normalize_detector_name, resolve_default_model_id
+from aoi360_pipeline.detectors import (
+    SUPPORTED_DETECTORS,
+    normalize_detector_name,
+    resolve_default_model_id,
+)
 
 
 def prefetch_detector_assets(

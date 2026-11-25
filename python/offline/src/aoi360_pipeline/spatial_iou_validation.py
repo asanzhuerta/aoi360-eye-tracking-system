@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pandas as pd
 
-from aoi360_pipeline.benchmark_detectors import parse_video_prompt_overrides
 from aoi360_pipeline.detectors import (
     SUPPORTED_DETECTORS,
     default_detections_csv_name,
@@ -19,7 +18,8 @@ from aoi360_pipeline.detectors import (
     normalize_detector_name,
     resolve_default_model_id,
 )
-from aoi360_pipeline.rebuild_runtime_assets import find_repo_root
+from aoi360_pipeline.paths import find_repo_root, resolve_repo_path
+from aoi360_pipeline.prompts import parse_video_prompt_overrides
 from aoi360_pipeline.runtime_environment import inspect_torch_runtime
 
 DEFAULT_MANIFEST_CSV = Path("data") / "manual_gt" / "benchmark_iou" / "frame_subset_manifest.csv"
@@ -41,12 +41,6 @@ class ValidationDataset:
     frame_count: int
     text_prompt: str
 
-
-def _resolve_repo_path(repo_root: Path, candidate: str | Path) -> Path:
-    path = Path(candidate)
-    if path.is_absolute():
-        return path
-    return (repo_root / path).resolve()
 
 
 def _load_manifest(manifest_csv: Path) -> pd.DataFrame:
@@ -464,11 +458,11 @@ def run_spatial_iou_validation(
     precision: str = "auto",
 ) -> dict[str, object]:
     repo_root_path = find_repo_root(repo_root)
-    manifest_path = _resolve_repo_path(repo_root_path, manifest_csv)
-    manual_boxes_path = _resolve_repo_path(repo_root_path, manual_boxes_csv)
-    frame_root_path = _resolve_repo_path(repo_root_path, frame_root)
-    output_root_path = _resolve_repo_path(repo_root_path, output_root)
-    prompt_file_path = _resolve_repo_path(repo_root_path, prompt_file)
+    manifest_path = resolve_repo_path(repo_root_path, manifest_csv)
+    manual_boxes_path = resolve_repo_path(repo_root_path, manual_boxes_csv)
+    frame_root_path = resolve_repo_path(repo_root_path, frame_root)
+    output_root_path = resolve_repo_path(repo_root_path, output_root)
+    prompt_file_path = resolve_repo_path(repo_root_path, prompt_file)
 
     manifest = _load_manifest(manifest_path)
     manual_boxes = _load_manual_boxes(manual_boxes_path, manifest)

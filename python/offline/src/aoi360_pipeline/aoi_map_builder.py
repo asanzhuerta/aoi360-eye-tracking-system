@@ -1,14 +1,30 @@
+"""Render exact-colour AOI ID maps from detector boxes.
+
+Each AOI is painted as a filled rectangle with a unique RGB colour, so the
+Unity runtime can resolve a gaze UV coordinate to an AOI id by exact colour
+lookup. Larger boxes are painted first, so smaller (nested) AOIs stay visible.
+"""
+
 from __future__ import annotations
 
 import argparse
 import colorsys
 import json
-import re
+from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
 from PIL import Image, ImageChops, ImageDraw
 
+from aoi360_pipeline.geometry import bbox_area, bbox_iou
+from aoi360_pipeline.prompts import (  # noqa: F401  (re-exported for compatibility)
+    canonicalize_label_to_prompt,
+    normalize_text_fragment,
+    parse_label_filters,
+    parse_prompt_vocabulary,
+    tokenize_label,
+)
 
 REQUIRED_DETECTION_COLUMNS = {
     "frame_index",
@@ -23,123 +39,109 @@ REQUIRED_DETECTION_COLUMNS = {
     "prompt",
 }
 
+# Golden-ratio hue stepping keeps consecutive ids visually distinct.
+_GOLDEN_RATIO_CONJUGATE = 0.61803398875
+
 
 def build_distinct_hex_color(index: int) -> str:
     if index < 1:
         raise ValueError("AOI color index must be >= 1")
 
-    hue = (index * 0.61803398875) % 1.0
+    hue = (index * _GOLDEN_RATIO_CONJUGATE) % 1.0
     red, green, blue = colorsys.hsv_to_rgb(hue, 0.75, 1.0)
     return "#{:02X}{:02X}{:02X}".format(int(red * 255), int(green * 255), int(blue * 255))
 
 
-def parse_label_filters(values: list[str] | None) -> set[str]:
-    if not values:
-        return set()
-    return {value.strip().lower() for value in values if value and value.strip()}
+def hex_to_rgb(color_hex: str) -> tuple[int, int, int]:
+    return int(color_hex[1:3], 16), int(color_hex[3:5], 16), int(color_hex[5:7], 16)
 
 
-def normalize_text_fragment(value: str) -> str:
-    normalized_value = re.sub(r"\s+", " ", str(value).replace("_", " ").strip().lower())
-    return normalized_value
+@dataclass(frozen=True)
+class AoiBox:
+    """One detection to paint, in source-frame pixel coordinates."""
+
+    detection_index: int
+    label: str
+    prompt: str
+    confidence: float
+    x_min: float
+    y_min: float
+    x_max: float
+    y_max: float
+    # Persistent identity assigned by the sequence tracker. When it is None the
+    # id is the box's position in paint order, and the colour/name derive from it.
+    aoi_id: int | None = None
+    name: str | None = None
+    color: str | None = None
+
+    @property
+    def bbox(self) -> tuple[float, float, float, float]:
+        return (self.x_min, self.y_min, self.x_max, self.y_max)
 
 
-def parse_prompt_vocabulary(prompt: str) -> list[str]:
-    prompt_segments = re.split(r"[.;\n\r]+", str(prompt))
-    vocabulary: list[str] = []
-    for segment in prompt_segments:
-        normalized_segment = normalize_text_fragment(segment)
-        if normalized_segment:
-            vocabulary.append(normalized_segment)
-    return vocabulary
+@dataclass(frozen=True)
+class AoiEntry:
+    """An AOI as painted into a map, in map pixel coordinates."""
+
+    id: int
+    name: str
+    prompt: str
+    category: str
+    color: str
+    confidence: float
+    bbox: list[int]
+    source_detection_index: int
+
+    def to_metadata(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "prompt": self.prompt,
+            "category": self.category,
+            "parentId": 0,
+            "color": self.color,
+            "sourceDetectionIndex": self.source_detection_index,
+            "confidence": self.confidence,
+            "bbox": self.bbox,
+        }
 
 
-def tokenize_label(value: str) -> set[str]:
-    return {token for token in normalize_text_fragment(value).split(" ") if token}
-
-
-def canonicalize_label_to_prompt(label: str, prompt: str) -> str:
-    normalized_label = normalize_text_fragment(label)
-    prompt_vocabulary = parse_prompt_vocabulary(prompt)
-    if not normalized_label or not prompt_vocabulary:
-        return normalized_label
-
-    if normalized_label in prompt_vocabulary:
-        return normalized_label
-
-    label_tokens = tokenize_label(normalized_label)
-    if not label_tokens:
-        return normalized_label
-
-    best_candidate = normalized_label
-    best_score: tuple[int, float, int, int, int] | None = None
-
-    for prompt_index, candidate in enumerate(prompt_vocabulary):
-        candidate_tokens = tokenize_label(candidate)
-        token_overlap = len(label_tokens.intersection(candidate_tokens))
-        if token_overlap <= 0:
-            continue
-
-        overlap_ratio = token_overlap / max(len(label_tokens), len(candidate_tokens))
-        contains_score = 1 if candidate in normalized_label or normalized_label in candidate else 0
-        score = (
-            contains_score,
-            overlap_ratio,
-            token_overlap,
-            len(candidate_tokens),
-            -prompt_index,
+def boxes_from_dataframe(detections: pd.DataFrame) -> list[AoiBox]:
+    return [
+        AoiBox(
+            detection_index=int(row.detection_index),
+            label=str(row.label),
+            prompt=str(row.prompt),
+            confidence=float(row.confidence),
+            x_min=float(row.x_min),
+            y_min=float(row.y_min),
+            x_max=float(row.x_max),
+            y_max=float(row.y_max),
         )
-        if best_score is None or score > best_score:
-            best_candidate = candidate
-            best_score = score
-
-    return best_candidate
-
-
-def _bbox_iou_from_series(box_a: pd.Series, box_b: pd.Series) -> float:
-    inter_x_min = max(float(box_a["x_min"]), float(box_b["x_min"]))
-    inter_y_min = max(float(box_a["y_min"]), float(box_b["y_min"]))
-    inter_x_max = min(float(box_a["x_max"]), float(box_b["x_max"]))
-    inter_y_max = min(float(box_a["y_max"]), float(box_b["y_max"]))
-
-    inter_width = max(0.0, inter_x_max - inter_x_min)
-    inter_height = max(0.0, inter_y_max - inter_y_min)
-    intersection = inter_width * inter_height
-
-    area_a = max(0.0, float(box_a["x_max"]) - float(box_a["x_min"])) * max(
-        0.0, float(box_a["y_max"]) - float(box_a["y_min"])
-    )
-    area_b = max(0.0, float(box_b["x_max"]) - float(box_b["x_min"])) * max(
-        0.0, float(box_b["y_max"]) - float(box_b["y_min"])
-    )
-    union = area_a + area_b - intersection
-
-    if union <= 0.0:
-        return 0.0
-
-    return intersection / union
+        for row in detections.itertuples(index=False)
+    ]
 
 
 def apply_per_frame_label_nms(detections: pd.DataFrame, iou_threshold: float) -> pd.DataFrame:
+    """Greedy NMS within each (frame, label) group, highest confidence first."""
     if detections.empty:
         return detections
 
     if not 0.0 <= iou_threshold <= 1.0:
         raise ValueError("frame_nms_iou_threshold must be between 0.0 and 1.0")
 
+    boxes = detections[["x_min", "y_min", "x_max", "y_max"]].to_numpy(dtype=float)
+    position_of = {label: position for position, label in enumerate(detections.index)}
+
     kept_row_indexes: list[int] = []
     grouped = detections.groupby(["frame_index", "frame_file", "label"], sort=False)
     for _group_key, frame_group in grouped:
         ordered_group = frame_group.sort_values(["confidence", "detection_index"], ascending=[False, True])
-        kept_rows: list[pd.Series] = []
-        for row_index, row in ordered_group.iterrows():
-            should_keep = True
-            for kept_row in kept_rows:
-                if _bbox_iou_from_series(row, kept_row) >= iou_threshold:
-                    should_keep = False
-                    break
-            if should_keep:
-                kept_rows.append(row)
+        kept_boxes: list[tuple[float, float, float, float]] = []
+        for row_index in ordered_group.index:
+            box = tuple(boxes[position_of[row_index]])
+            if all(bbox_iou(box, kept) < iou_threshold for kept in kept_boxes):
+                kept_boxes.append(box)
                 kept_row_indexes.append(int(row_index))
 
     if not kept_row_indexes:
@@ -148,63 +150,76 @@ def apply_per_frame_label_nms(detections: pd.DataFrame, iou_threshold: float) ->
     return detections.loc[sorted(kept_row_indexes)].copy()
 
 
-def build_aoi_entries_from_detections(
-    detections: pd.DataFrame,
+def build_aoi_entries(
+    boxes: Iterable[AoiBox],
     width: int,
     height: int,
     box_padding: int = 0,
     source_width: int | None = None,
     source_height: int | None = None,
-) -> list[dict[str, object]]:
-    entries: list[dict[str, object]] = []
+) -> list[AoiEntry]:
+    """Scale and pad boxes into map space, ordered largest first (paint order)."""
     source_width = int(source_width or width)
     source_height = int(source_height or height)
     scale_x = width / max(1, source_width)
     scale_y = height / max(1, source_height)
-    ordered_detections = detections.copy()
-    ordered_detections["_bbox_area"] = (
-        (ordered_detections["x_max"].astype(float) - ordered_detections["x_min"].astype(float)).clip(lower=0.0) *
-        (ordered_detections["y_max"].astype(float) - ordered_detections["y_min"].astype(float)).clip(lower=0.0)
-    )
-    ordered_detections = ordered_detections.sort_values(
-        ["_bbox_area", "confidence", "detection_index"],
-        ascending=[False, True, True],
-    )
 
-    for local_aoi_id, row in enumerate(ordered_detections.itertuples(index=False), start=1):
-        row_label = getattr(row, "label", getattr(row, "aoi_category", "aoi"))
-        row_prompt = getattr(row, "aoi_prompt", getattr(row, "prompt", row_label))
-        assigned_aoi_id = int(getattr(row, "aoi_id", local_aoi_id))
-        color_hex = str(getattr(row, "aoi_color", build_distinct_hex_color(assigned_aoi_id)))
-        name = str(getattr(row, "aoi_name", f"{str(row_label)}_{assigned_aoi_id:02d}"))
-        category = str(getattr(row, "aoi_category", str(row_label)))
-        prompt = str(row_prompt)
+    ordered = sorted(boxes, key=lambda box: (-bbox_area(box.bbox), box.confidence, box.detection_index))
 
-        red = int(color_hex[1:3], 16)
-        green = int(color_hex[3:5], 16)
-        blue = int(color_hex[5:7], 16)
-
-        x_min = max(0, int(round((float(row.x_min) - box_padding) * scale_x)))
-        y_min = max(0, int(round((float(row.y_min) - box_padding) * scale_y)))
-        x_max = min(width - 1, int(round((float(row.x_max) + box_padding) * scale_x)))
-        y_max = min(height - 1, int(round((float(row.y_max) + box_padding) * scale_y)))
-
+    entries: list[AoiEntry] = []
+    for paint_position, box in enumerate(ordered, start=1):
+        aoi_id = box.aoi_id if box.aoi_id is not None else paint_position
         entries.append(
-            {
-                "id": assigned_aoi_id,
-                "name": name,
-                "prompt": prompt,
-                "category": category,
-                "parentId": 0,
-                "color": color_hex,
-                "confidence": float(row.confidence),
-                "bbox": [x_min, y_min, x_max, y_max],
-                "sourceDetectionIndex": int(row.detection_index),
-                "fillRgb": (red, green, blue),
-            }
+            AoiEntry(
+                id=int(aoi_id),
+                name=box.name or f"{box.label}_{aoi_id:02d}",
+                prompt=box.prompt,
+                category=box.label,
+                color=box.color or build_distinct_hex_color(aoi_id),
+                confidence=box.confidence,
+                bbox=[
+                    max(0, int(round((box.x_min - box_padding) * scale_x))),
+                    max(0, int(round((box.y_min - box_padding) * scale_y))),
+                    min(width - 1, int(round((box.x_max + box_padding) * scale_x))),
+                    min(height - 1, int(round((box.y_max + box_padding) * scale_y))),
+                ],
+                source_detection_index=box.detection_index,
+            )
         )
-
     return entries
+
+
+def paint_aoi_map(entries: list[AoiEntry], width: int, height: int, yaw_offset_degrees: float = 0.0) -> Image.Image:
+    """Paint entries in order onto a black RGB canvas and apply the yaw roll."""
+    if width <= 0 or height <= 0:
+        raise ValueError("output_width and output_height must be > 0 when provided")
+
+    aoi_map = Image.new("RGB", (width, height), (0, 0, 0))
+    drawer = ImageDraw.Draw(aoi_map)
+    for entry in entries:
+        # Boxes are a bootstrap representation; segmentation masks can replace
+        # this fill step without changing the Unity-side metadata contract.
+        drawer.rectangle(entry.bbox, fill=hex_to_rgb(entry.color))
+
+    if abs(yaw_offset_degrees) > 0.0001:
+        horizontal_pixel_offset = int(round((yaw_offset_degrees / 360.0) * width)) % width
+        if horizontal_pixel_offset != 0:
+            aoi_map = ImageChops.offset(aoi_map, horizontal_pixel_offset, 0)
+
+    return aoi_map
+
+
+def write_json(path: Path, document: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+
+
+def read_frame_size(frames_dir: Path, frame_file: str) -> tuple[int, int]:
+    frame_path = frames_dir / frame_file
+    if not frame_path.exists():
+        raise FileNotFoundError(f"Frame image referenced by detections was not found: {frame_path}")
+    with Image.open(frame_path) as frame_image:
+        return frame_image.size
 
 
 def load_and_filter_detections(
@@ -224,9 +239,7 @@ def load_and_filter_detections(
 
     missing_columns = sorted(REQUIRED_DETECTION_COLUMNS.difference(detections.columns))
     if missing_columns:
-        raise ValueError(
-            "Detections CSV is missing required columns: " + ", ".join(missing_columns)
-        )
+        raise ValueError("Detections CSV is missing required columns: " + ", ".join(missing_columns))
 
     if normalize_labels_to_prompt_vocab:
         detections = detections.copy()
@@ -237,9 +250,7 @@ def load_and_filter_detections(
 
     label_filters = parse_label_filters(include_labels)
     if label_filters:
-        detections = detections[
-            detections["label"].astype(str).map(normalize_text_fragment).isin(label_filters)
-        ]
+        detections = detections[detections["label"].astype(str).map(normalize_text_fragment).isin(label_filters)]
 
     detections = detections[detections["confidence"] >= float(min_confidence)].copy()
     if detections.empty:
@@ -258,6 +269,7 @@ def select_frame_detections(
     frame_index: int | None = None,
     frame_file: str | None = None,
 ) -> pd.DataFrame:
+    """Pick one frame's detections; defaults to the earliest detected frame."""
     if frame_file and frame_index is not None:
         raise ValueError("Use either frame_file or frame_index, not both.")
 
@@ -273,138 +285,6 @@ def select_frame_detections(
         raise RuntimeError("No detections remain for the selected frame.")
 
     return selected.sort_values(["confidence", "detection_index"], ascending=[False, True]).reset_index(drop=True)
-
-
-def render_aoi_map_from_detections(
-    detections: pd.DataFrame,
-    frames_dir: str | Path,
-    output_map_path: str | Path,
-    output_metadata_path: str | Path | None,
-    video_name: str,
-    fps: int = 30,
-    box_padding: int = 0,
-    write_metadata_document: bool = True,
-    output_width: int | None = None,
-    output_height: int | None = None,
-    yaw_offset_degrees: float = 0.0,
-) -> dict[str, object]:
-    frames_dir = Path(frames_dir)
-    output_map_path = Path(output_map_path)
-    if output_metadata_path is not None:
-        output_metadata_path = Path(output_metadata_path)
-
-    if not frames_dir.exists():
-        raise FileNotFoundError(f"Frames directory not found: {frames_dir}")
-
-    if box_padding < 0:
-        raise ValueError("box_padding must be >= 0")
-
-    if fps < 0:
-        raise ValueError("fps must be >= 0")
-
-    selected_frame_file = str(detections.iloc[0]["frame_file"])
-    selected_frame_index = int(detections.iloc[0]["frame_index"])
-    selected_frame_path = frames_dir / selected_frame_file
-    if not selected_frame_path.exists():
-        raise FileNotFoundError(f"Frame image referenced by detections was not found: {selected_frame_path}")
-
-    with Image.open(selected_frame_path) as frame_image:
-        source_width, source_height = frame_image.size
-
-    width = int(output_width or source_width)
-    height = int(output_height or source_height)
-
-    if width <= 0 or height <= 0:
-        raise ValueError("output_width and output_height must be > 0 when provided")
-
-    aoi_map = Image.new("RGB", (width, height), (0, 0, 0))
-    drawer = ImageDraw.Draw(aoi_map)
-
-    aois = build_aoi_entries_from_detections(
-        detections=detections,
-        width=width,
-        height=height,
-        box_padding=box_padding,
-        source_width=source_width,
-        source_height=source_height,
-    )
-
-    for aoi in aois:
-        x_min, y_min, x_max, y_max = aoi["bbox"]
-
-        # Phase 1 deliberately paints box AOIs as a bootstrap path. Once segmentation
-        # lands, this fill step can be replaced by exact masks without changing the
-        # Unity-side metadata contract.
-        drawer.rectangle([x_min, y_min, x_max, y_max], fill=aoi["fillRgb"])
-
-    if abs(yaw_offset_degrees) > 0.0001:
-        horizontal_pixel_offset = int(round((yaw_offset_degrees / 360.0) * width)) % width
-        if horizontal_pixel_offset != 0:
-            aoi_map = ImageChops.offset(aoi_map, horizontal_pixel_offset, 0)
-
-    rgb24_bytes = aoi_map.tobytes()
-
-    output_map_path.parent.mkdir(parents=True, exist_ok=True)
-    aoi_map.save(output_map_path)
-
-    if write_metadata_document:
-        if output_metadata_path is None:
-            raise ValueError("output_metadata_path is required when write_metadata_document=True")
-
-        output_metadata_path = Path(output_metadata_path)
-        output_metadata_path.parent.mkdir(parents=True, exist_ok=True)
-        metadata = {
-            "video": video_name,
-            "fps": int(fps),
-            "idMapResolution": [width, height],
-            "sourceFrameResolution": [source_width, source_height],
-            "bakedYawOffsetDegrees": float(yaw_offset_degrees),
-            "frameIndex": selected_frame_index,
-            "frameFile": selected_frame_file,
-            "aois": [
-                {
-                    "id": aoi["id"],
-                    "name": aoi["name"],
-                    "prompt": aoi["prompt"],
-                    "category": aoi["category"],
-                    "parentId": aoi["parentId"],
-                    "color": aoi["color"],
-                    "sourceDetectionIndex": aoi["sourceDetectionIndex"],
-                    "confidence": aoi["confidence"],
-                    "bbox": aoi["bbox"],
-                }
-                for aoi in aois
-            ],
-        }
-        output_metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-
-    return {
-        "frame_file": selected_frame_file,
-        "frame_index": selected_frame_index,
-        "aoi_count": len(aois),
-        "output_map_path": str(output_map_path),
-        "output_metadata_path": str(output_metadata_path) if output_metadata_path is not None else "",
-        "image_width": width,
-        "image_height": height,
-        "source_image_width": source_width,
-        "source_image_height": source_height,
-        "baked_yaw_offset_degrees": float(yaw_offset_degrees),
-        "rgb24_bytes": rgb24_bytes,
-        "aois": [
-            {
-                "id": aoi["id"],
-                "name": aoi["name"],
-                "prompt": aoi["prompt"],
-                "category": aoi["category"],
-                "parentId": aoi["parentId"],
-                "color": aoi["color"],
-                "sourceDetectionIndex": aoi["sourceDetectionIndex"],
-                "confidence": aoi["confidence"],
-                "bbox": aoi["bbox"],
-            }
-            for aoi in aois
-        ],
-    }
 
 
 def build_aoi_map(
@@ -423,28 +303,70 @@ def build_aoi_map(
     output_height: int | None = None,
     yaw_offset_degrees: float = 0.0,
 ) -> dict[str, object]:
+    """Export a single AOI map PNG and its metadata JSON for one frame."""
+    frames_dir = Path(frames_dir)
+    output_map_path = Path(output_map_path)
+    output_metadata_path = Path(output_metadata_path)
+    if not frames_dir.exists():
+        raise FileNotFoundError(f"Frames directory not found: {frames_dir}")
+    if box_padding < 0:
+        raise ValueError("box_padding must be >= 0")
+    if fps < 0:
+        raise ValueError("fps must be >= 0")
+
     detections = load_and_filter_detections(
         detections_csv=detections_csv,
         include_labels=include_labels,
         min_confidence=min_confidence,
     )
-    selected_detections = select_frame_detections(
-        detections=detections,
-        frame_index=frame_index,
-        frame_file=frame_file,
-    )
-    return render_aoi_map_from_detections(
-        detections=selected_detections,
-        frames_dir=frames_dir,
-        output_map_path=output_map_path,
-        output_metadata_path=output_metadata_path,
-        video_name=video_name,
-        fps=fps,
+    selected = select_frame_detections(detections=detections, frame_index=frame_index, frame_file=frame_file)
+    selected_frame_file = str(selected.iloc[0]["frame_file"])
+    selected_frame_index = int(selected.iloc[0]["frame_index"])
+
+    source_width, source_height = read_frame_size(frames_dir, selected_frame_file)
+    width = int(output_width or source_width)
+    height = int(output_height or source_height)
+
+    entries = build_aoi_entries(
+        boxes_from_dataframe(selected),
+        width=width,
+        height=height,
         box_padding=box_padding,
-        output_width=output_width,
-        output_height=output_height,
-        yaw_offset_degrees=yaw_offset_degrees,
+        source_width=source_width,
+        source_height=source_height,
     )
+    aoi_map = paint_aoi_map(entries, width, height, yaw_offset_degrees)
+    output_map_path.parent.mkdir(parents=True, exist_ok=True)
+    aoi_map.save(output_map_path)
+
+    aoi_metadata = [entry.to_metadata() for entry in entries]
+    write_json(
+        output_metadata_path,
+        {
+            "video": video_name,
+            "fps": int(fps),
+            "idMapResolution": [width, height],
+            "sourceFrameResolution": [source_width, source_height],
+            "bakedYawOffsetDegrees": float(yaw_offset_degrees),
+            "frameIndex": selected_frame_index,
+            "frameFile": selected_frame_file,
+            "aois": aoi_metadata,
+        },
+    )
+
+    return {
+        "frame_file": selected_frame_file,
+        "frame_index": selected_frame_index,
+        "aoi_count": len(entries),
+        "output_map_path": str(output_map_path),
+        "output_metadata_path": str(output_metadata_path),
+        "image_width": width,
+        "image_height": height,
+        "source_image_width": source_width,
+        "source_image_height": source_height,
+        "baked_yaw_offset_degrees": float(yaw_offset_degrees),
+        "aois": aoi_metadata,
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -476,23 +398,9 @@ def build_parser() -> argparse.ArgumentParser:
         default="video_360.mp4",
         help="Video filename to write into the metadata JSON.",
     )
-    parser.add_argument(
-        "--fps",
-        type=int,
-        default=30,
-        help="FPS metadata to write into the AOI metadata JSON.",
-    )
-    parser.add_argument(
-        "--frame-index",
-        type=int,
-        default=None,
-        help="Specific frame index to convert into an AOI map.",
-    )
-    parser.add_argument(
-        "--frame-file",
-        default=None,
-        help="Specific frame filename to convert into an AOI map.",
-    )
+    parser.add_argument("--fps", type=int, default=30, help="FPS metadata to write into the AOI metadata JSON.")
+    parser.add_argument("--frame-index", type=int, default=None, help="Specific frame index to convert.")
+    parser.add_argument("--frame-file", default=None, help="Specific frame filename to convert.")
     parser.add_argument(
         "--include-label",
         action="append",
@@ -508,8 +416,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    parser = build_parser()
-    args = parser.parse_args()
+    args = build_parser().parse_args()
     summary = build_aoi_map(
         detections_csv=args.detections_csv,
         frames_dir=args.frames_dir,

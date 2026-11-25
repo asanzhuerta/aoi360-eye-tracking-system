@@ -4,19 +4,28 @@ from __future__ import annotations
 
 import argparse
 import os
-import re
-from collections.abc import Callable
 from pathlib import Path
 
 import pandas as pd
 
-from aoi360_pipeline.cache_roots import get_ultralytics_cache_root as _get_ultralytics_cache_root
-from aoi360_pipeline.detection_contract import DETECTION_COLUMNS, get_frame_index
+from aoi360_pipeline.cache_roots import (
+    get_ultralytics_cache_root as _get_ultralytics_cache_root,
+)
+from aoi360_pipeline.callbacks import (
+    LogCallback,
+    ProgressCallback,
+    emit_log,
+    emit_progress,
+)
+from aoi360_pipeline.detection_contract import (
+    DETECTION_COLUMNS,
+    get_frame_index,
+    list_frame_paths,
+)
+from aoi360_pipeline.prompts import split_class_prompt
 from aoi360_pipeline.runtime_environment import inspect_torch_runtime
 
 DEFAULT_MODEL_ID = "yolov8s-worldv2.pt"
-ProgressCallback = Callable[[int, int, str], None]
-LogCallback = Callable[[str], None]
 
 
 def _lazy_import_yolo_world_stack():
@@ -51,44 +60,7 @@ def _resolve_model_reference(model_id: str) -> str:
     return str(cached_model_path)
 
 
-def _emit_log(log_callback: LogCallback | None, message: str) -> None:
-    if log_callback is not None:
-        log_callback(message)
-    else:
-        print(message)
 
-
-def _emit_progress(
-    progress_callback: ProgressCallback | None,
-    current: int,
-    total: int,
-    message: str,
-) -> None:
-    if progress_callback is not None:
-        progress_callback(current, total, message)
-
-
-def _parse_open_vocabulary_classes(text_prompt: str) -> list[str]:
-    # Grounding DINO works well with dot-separated prompts. YOLO-World expects
-    # a list of class strings, so normalize the existing prompt contract here.
-    prompt_tokens = re.split(r"[,\n]+|\.(?:\s|$)", text_prompt)
-    normalized_tokens: list[str] = []
-    seen_tokens: set[str] = set()
-
-    for token in prompt_tokens:
-        normalized_token = token.strip()
-        if not normalized_token:
-            continue
-        lowered_token = normalized_token.lower()
-        if lowered_token in seen_tokens:
-            continue
-        seen_tokens.add(lowered_token)
-        normalized_tokens.append(normalized_token)
-
-    if not normalized_tokens:
-        raise ValueError("text_prompt must contain at least one non-empty class prompt for YOLO-World.")
-
-    return normalized_tokens
 
 
 def _resolve_prediction_size(
@@ -175,7 +147,7 @@ def _collect_detection_rows(
                     detection_count += 1
 
             processed_index += 1
-            _emit_progress(
+            emit_progress(
                 progress_callback,
                 processed_index,
                 total_frames,
@@ -219,7 +191,7 @@ def detect_frames(
     output_csv.parent.mkdir(parents=True, exist_ok=True)
 
     runtime_summary = inspect_torch_runtime(torch)
-    class_prompts = _parse_open_vocabulary_classes(text_prompt)
+    class_prompts = split_class_prompt(text_prompt, "YOLO-World")
     effective_batch_size = batch_size if batch_size > 0 else runtime_summary.recommended_batch_size
     resolved_precision = runtime_summary.recommended_precision if precision == "auto" else precision.lower()
     if resolved_precision not in {"fp16", "fp32"}:
@@ -234,25 +206,25 @@ def detect_frames(
     device_argument = 0 if runtime_summary.cuda_available else "cpu"
     resolved_model_reference = _resolve_model_reference(model_id)
 
-    _emit_log(log_callback, f"[detect_yolo_world] Runtime: {runtime_summary.short_label}")
-    _emit_log(log_callback, f"[detect_yolo_world] Using device: {runtime_summary.default_device}")
-    _emit_log(log_callback, f"[detect_yolo_world] Model: {model_id}")
-    _emit_log(log_callback, f"[detect_yolo_world] Cached model path: {resolved_model_reference}")
-    _emit_log(log_callback, f"[detect_yolo_world] Batch size: {effective_batch_size}")
-    _emit_log(log_callback, f"[detect_yolo_world] Precision: {resolved_precision}")
-    _emit_log(log_callback, f"[detect_yolo_world] Prompt classes: {', '.join(class_prompts)}")
+    emit_log(log_callback, f"[detect_yolo_world] Runtime: {runtime_summary.short_label}")
+    emit_log(log_callback, f"[detect_yolo_world] Using device: {runtime_summary.default_device}")
+    emit_log(log_callback, f"[detect_yolo_world] Model: {model_id}")
+    emit_log(log_callback, f"[detect_yolo_world] Cached model path: {resolved_model_reference}")
+    emit_log(log_callback, f"[detect_yolo_world] Batch size: {effective_batch_size}")
+    emit_log(log_callback, f"[detect_yolo_world] Precision: {resolved_precision}")
+    emit_log(log_callback, f"[detect_yolo_world] Prompt classes: {', '.join(class_prompts)}")
     if text_threshold != 0.25:
-        _emit_log(
+        emit_log(
             log_callback,
             "[detect_yolo_world] Note: text_threshold is not used by YOLO-World and is ignored in this backend.",
         )
 
-    frame_paths = sorted([*frames_dir.glob("*.jpg"), *frames_dir.glob("*.jpeg"), *frames_dir.glob("*.png")])
+    frame_paths = list_frame_paths(frames_dir)
     if not frame_paths:
         raise RuntimeError(f"No images found in: {frames_dir}")
 
     total_frames = len(frame_paths)
-    _emit_progress(progress_callback, 0, total_frames, "Loading YOLO-World and preparing detections.")
+    emit_progress(progress_callback, 0, total_frames, "Loading YOLO-World and preparing detections.")
     def _build_model():
         built_model = YOLOWorld(resolved_model_reference)
         built_model.set_classes(class_prompts)
@@ -283,19 +255,19 @@ def detect_frames(
         if not should_retry_with_safe_cuda:
             raise
 
-        _emit_log(
+        emit_log(
             log_callback,
             (
                 "[detect_yolo_world] CUDA inference failed with the automatic settings. "
                 "Retrying with a safer configuration: batch_size=1, precision=fp32."
             ),
         )
-        _emit_log(log_callback, f"[detect_yolo_world] Original error: {type(exception).__name__}: {exception}")
+        emit_log(log_callback, f"[detect_yolo_world] Original error: {type(exception).__name__}: {exception}")
 
         if hasattr(torch.cuda, "empty_cache"):
             torch.cuda.empty_cache()
 
-        _emit_progress(progress_callback, 0, total_frames, "Retrying YOLO-World with safer CUDA settings.")
+        emit_progress(progress_callback, 0, total_frames, "Retrying YOLO-World with safer CUDA settings.")
         rows = _collect_detection_rows(
             model=_build_model(),
             frame_paths=frame_paths,
@@ -314,9 +286,9 @@ def detect_frames(
     detections = pd.DataFrame(rows, columns=DETECTION_COLUMNS)
     detections.to_csv(output_csv, index=False)
 
-    _emit_log(log_callback, f"[detect_yolo_world] Frames processed: {len(frame_paths)}")
-    _emit_log(log_callback, f"[detect_yolo_world] Detections exported: {len(detections)}")
-    _emit_log(log_callback, f"[detect_yolo_world] CSV written to: {output_csv}")
+    emit_log(log_callback, f"[detect_yolo_world] Frames processed: {len(frame_paths)}")
+    emit_log(log_callback, f"[detect_yolo_world] Detections exported: {len(detections)}")
+    emit_log(log_callback, f"[detect_yolo_world] CSV written to: {output_csv}")
     return detections
 
 
@@ -327,10 +299,10 @@ def prefetch_model_assets(
     log_callback: LogCallback | None = None,
 ) -> dict[str, str]:
     _, _, YOLOWorld = _lazy_import_yolo_world_stack()
-    class_prompts = _parse_open_vocabulary_classes(text_prompt)
+    class_prompts = split_class_prompt(text_prompt, "YOLO-World")
     resolved_model_reference = _resolve_model_reference(model_id)
 
-    _emit_log(log_callback, f"[detect_yolo_world] Prefetching assets into local cache: {_get_ultralytics_cache_root()}")
+    emit_log(log_callback, f"[detect_yolo_world] Prefetching assets into local cache: {_get_ultralytics_cache_root()}")
 
     def _build_model():
         built_model = YOLOWorld(resolved_model_reference)

@@ -11,7 +11,7 @@ from typing import Any
 
 import pandas as pd
 
-from aoi360_pipeline.rebuild_runtime_assets import find_repo_root
+from aoi360_pipeline.paths import find_repo_root, resolve_repo_path
 
 DEFAULT_VIDEO_IDS = ["test1Camera360", "test2Camera360", "test3Lions360"]
 DEFAULT_METADATA_ROOT = Path("data") / "processed" / "metadata"
@@ -28,12 +28,6 @@ class DiagnosticConfig:
     metadata_root: str
     analytics_root: str | None
 
-
-def _resolve_repo_path(repo_root: Path, candidate: str | Path) -> Path:
-    path = Path(candidate)
-    if path.is_absolute():
-        return path
-    return (repo_root / path).resolve()
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -338,9 +332,9 @@ def main() -> None:
     args = parse_args()
     repo_root = find_repo_root(Path(__file__).resolve())
     video_ids = args.video_ids or DEFAULT_VIDEO_IDS
-    metadata_root = _resolve_repo_path(repo_root, args.metadata_root)
-    analytics_root = _resolve_repo_path(repo_root, args.analytics_root) if args.analytics_root else None
-    output_root = _resolve_repo_path(repo_root, args.output_root)
+    metadata_root = resolve_repo_path(repo_root, args.metadata_root)
+    analytics_root = resolve_repo_path(repo_root, args.analytics_root) if args.analytics_root else None
+    output_root = resolve_repo_path(repo_root, args.output_root)
 
     destination = run_diagnostics(
         video_ids=video_ids,

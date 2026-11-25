@@ -9,7 +9,7 @@ from pathlib import Path
 import cv2
 import pandas as pd
 
-from aoi360_pipeline.rebuild_runtime_assets import find_repo_root
+from aoi360_pipeline.paths import find_repo_root, resolve_repo_path
 
 DEFAULT_MANIFEST_CSV = Path("data") / "manual_gt" / "benchmark_iou" / "frame_subset_manifest.csv"
 DEFAULT_OUTPUT_CSV = Path("data") / "manual_gt" / "benchmark_iou" / "manual_boxes.csv"
@@ -481,12 +481,6 @@ class OpenCVManualAnnotator:
         cv2.destroyAllWindows()
 
 
-def _resolve_repo_path(repo_root: Path, candidate: str | Path) -> Path:
-    path = Path(candidate)
-    if path.is_absolute():
-        return path
-    return (repo_root / path).resolve()
-
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -503,8 +497,8 @@ def main() -> None:
     args = build_arg_parser().parse_args()
     repo_root = find_repo_root(None)
     annotator = OpenCVManualAnnotator(
-        manifest_csv=_resolve_repo_path(repo_root, args.manifest_csv),
-        output_csv=_resolve_repo_path(repo_root, args.output_csv),
+        manifest_csv=resolve_repo_path(repo_root, args.manifest_csv),
+        output_csv=resolve_repo_path(repo_root, args.output_csv),
         max_width=args.max_width,
         max_height=args.max_height,
     )
