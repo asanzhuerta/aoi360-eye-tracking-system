@@ -1,9 +1,17 @@
-from __future__ import annotations
 """Extract sparse frames from a source video for downstream AOI authoring."""
 
+from __future__ import annotations
+
 import argparse
-from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+from aoi360_pipeline.callbacks import (
+    LogCallback,
+    ProgressCallback,
+    emit_log,
+    emit_progress,
+)
 
 try:
     import cv2
@@ -15,25 +23,8 @@ else:
 
 
 SUPPORTED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png"}
-ProgressCallback = Callable[[int, int, str], None]
-LogCallback = Callable[[str], None]
-
-
-def _emit_log(log_callback: LogCallback | None, message: str) -> None:
-    if log_callback is not None:
-        log_callback(message)
-    else:
-        print(message)
-
-
-def _emit_progress(
-    progress_callback: ProgressCallback | None,
-    current: int,
-    total: int,
-    message: str,
-) -> None:
-    if progress_callback is not None:
-        progress_callback(current, total, message)
+# Image encoding releases the GIL, so a few writer threads overlap it with decoding.
+_WRITER_THREADS = 4
 
 
 def extract_frames(
@@ -77,43 +68,51 @@ def extract_frames(
     frame_index = 0
     saved_count = 0
 
-    _emit_log(
+    emit_log(
         log_callback,
         f"[extract_frames] Reading '{video_path.name}' and saving one frame every {every_n_frames} frames.",
     )
 
-    while True:
-        success, frame = capture.read()
-        if not success:
-            break
+    pending_writes = []
+    with ThreadPoolExecutor(max_workers=_WRITER_THREADS) as writer:
+        while True:
+            # grab() advances without converting the frame; only kept frames
+            # are retrieved, which yields the same pixels as read().
+            if not capture.grab():
+                break
 
-        if frame_index % every_n_frames == 0:
-            output_path = output_dir / f"frame_{frame_index:06d}.{extension}"
-            cv2.imwrite(str(output_path), frame)
-            saved_count += 1
+            if frame_index % every_n_frames == 0:
+                success, frame = capture.retrieve()
+                if not success:
+                    break
+                output_path = output_dir / f"frame_{frame_index:06d}.{extension}"
+                pending_writes.append(writer.submit(cv2.imwrite, str(output_path), frame))
+                saved_count += 1
 
-        frame_index += 1
-        should_report = (
-            progress_callback is not None and
-            (frame_index == 1 or frame_index % 30 == 0 or (total_frames > 0 and frame_index >= total_frames))
-        )
-        if should_report:
-            _emit_progress(
-                progress_callback,
-                min(frame_index, total_frames) if total_frames > 0 else frame_index,
-                total_frames if total_frames > 0 else max(frame_index, 1),
-                f"Extracted {saved_count} sparse frames so far.",
+            frame_index += 1
+            should_report = progress_callback is not None and (
+                frame_index == 1 or frame_index % 30 == 0 or (total_frames > 0 and frame_index >= total_frames)
             )
+            if should_report:
+                emit_progress(
+                    progress_callback,
+                    min(frame_index, total_frames) if total_frames > 0 else frame_index,
+                    total_frames if total_frames > 0 else max(frame_index, 1),
+                    f"Extracted {saved_count} sparse frames so far.",
+                )
 
     capture.release()
+    for write in pending_writes:
+        if not write.result():
+            raise RuntimeError(f"Could not write extracted frames into: {output_dir}")
 
-    _emit_progress(
+    emit_progress(
         progress_callback,
         total_frames if total_frames > 0 else frame_index,
         total_frames if total_frames > 0 else max(frame_index, 1),
         f"Frame extraction finished with {saved_count} saved frames.",
     )
-    _emit_log(
+    emit_log(
         log_callback,
         f"[extract_frames] Completed: {frame_index} frames read, {saved_count} saved into '{output_dir}'.",
     )

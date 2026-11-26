@@ -28,3 +28,11 @@ def get_frame_index(frame_path: Path) -> int:
     if not match:
         raise ValueError(f"Could not extract frame index from: {frame_path.name}")
     return int(match.group(1))
+
+
+FRAME_IMAGE_PATTERNS = ("*.jpg", "*.jpeg", "*.png")
+
+
+def list_frame_paths(frames_dir: Path) -> list[Path]:
+    """All frame images in a directory, sorted by file name across extensions."""
+    return sorted(path for pattern in FRAME_IMAGE_PATTERNS for path in Path(frames_dir).glob(pattern))

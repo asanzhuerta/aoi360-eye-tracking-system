@@ -1,17 +1,18 @@
-from __future__ import annotations
 """Orchestrate the full offline AOI rebuild pipeline from one entry point.
 
 This module is intentionally thin: it coordinates the extraction, detection,
 and AOI export stages while keeping each stage in its own focused module.
 """
 
+from __future__ import annotations
+
 import argparse
 import shutil
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from aoi360_pipeline.aoi_map_sequence_builder import build_aoi_sequence
+from aoi360_pipeline.callbacks import LogCallback, StageProgressCallback, emit_log
 from aoi360_pipeline.detectors import (
     DEFAULT_DETECTOR,
     SUPPORTED_DETECTORS,
@@ -22,10 +23,10 @@ from aoi360_pipeline.detectors import (
     resolve_default_model_id,
 )
 from aoi360_pipeline.frame_extraction import extract_frames
+from aoi360_pipeline.paths import default_runtime_pack_path, find_repo_root
 from aoi360_pipeline.runtime_environment import inspect_torch_runtime
 
-ProgressCallback = Callable[[str, int, int, str], None]
-LogCallback = Callable[[str], None]
+ProgressCallback = StageProgressCallback
 
 
 @dataclass(frozen=True)
@@ -38,16 +39,6 @@ class RuntimeBuildPaths:
     output_metadata_dir: Path
     manifest_path: Path
     runtime_pack_path: Path
-
-
-def find_repo_root(start: str | Path | None = None) -> Path:
-    """Walk up from the current path until the project root shape is found."""
-
-    current = Path(start or Path.cwd()).resolve()
-    for candidate in [current, *current.parents]:
-        if (candidate / "python").exists() and (candidate / "unity").exists():
-            return candidate
-    return current
 
 
 def derive_runtime_build_paths(
@@ -88,9 +79,7 @@ def derive_runtime_build_paths(
         if manifest_path is not None
         else root / "data" / "processed" / "metadata" / f"{video_stem}_aoi_sequence_manifest.json"
     )
-    resolved_runtime_pack_path = resolved_manifest_path.with_name(
-        resolved_manifest_path.stem.replace("_manifest", "_rgb24") + ".bin"
-    )
+    resolved_runtime_pack_path = default_runtime_pack_path(resolved_manifest_path)
 
     return RuntimeBuildPaths(
         frames_dir=resolved_frames_dir,
@@ -100,13 +89,6 @@ def derive_runtime_build_paths(
         manifest_path=resolved_manifest_path,
         runtime_pack_path=resolved_runtime_pack_path,
     )
-
-
-def _emit_log(log_callback: LogCallback | None, message: str) -> None:
-    if log_callback is not None:
-        log_callback(message)
-    else:
-        print(message)
 
 
 def _emit_progress(
@@ -186,7 +168,7 @@ def rebuild_runtime_assets(
     runtime_pack_path = resolved_paths.runtime_pack_path
 
     if clean:
-        _emit_log(log_callback, "[rebuild_runtime_assets] Cleaning previously generated assets.")
+        emit_log(log_callback, "[rebuild_runtime_assets] Cleaning previously generated assets.")
         clean_paths([
             frames_dir,
             detections_csv,
@@ -196,15 +178,15 @@ def rebuild_runtime_assets(
             runtime_pack_path,
         ])
 
-    _emit_log(log_callback, f"[rebuild_runtime_assets] Video selected: {video_path}")
-    _emit_log(log_callback, f"[rebuild_runtime_assets] Frames directory: {frames_dir}")
-    _emit_log(log_callback, f"[rebuild_runtime_assets] Detections CSV: {detections_csv}")
-    _emit_log(log_callback, f"[rebuild_runtime_assets] AOI maps directory: {output_maps_dir}")
-    _emit_log(log_callback, f"[rebuild_runtime_assets] AOI metadata directory: {output_metadata_dir}")
-    _emit_log(log_callback, f"[rebuild_runtime_assets] Manifest path: {manifest_path}")
-    _emit_log(log_callback, f"[rebuild_runtime_assets] Runtime pack path: {runtime_pack_path}")
-    _emit_log(log_callback, f"[rebuild_runtime_assets] Detector: {detector_name}")
-    _emit_log(log_callback, f"[rebuild_runtime_assets] Detector model: {resolved_detection_model_id}")
+    emit_log(log_callback, f"[rebuild_runtime_assets] Video selected: {video_path}")
+    emit_log(log_callback, f"[rebuild_runtime_assets] Frames directory: {frames_dir}")
+    emit_log(log_callback, f"[rebuild_runtime_assets] Detections CSV: {detections_csv}")
+    emit_log(log_callback, f"[rebuild_runtime_assets] AOI maps directory: {output_maps_dir}")
+    emit_log(log_callback, f"[rebuild_runtime_assets] AOI metadata directory: {output_metadata_dir}")
+    emit_log(log_callback, f"[rebuild_runtime_assets] Manifest path: {manifest_path}")
+    emit_log(log_callback, f"[rebuild_runtime_assets] Runtime pack path: {runtime_pack_path}")
+    emit_log(log_callback, f"[rebuild_runtime_assets] Detector: {detector_name}")
+    emit_log(log_callback, f"[rebuild_runtime_assets] Detector model: {resolved_detection_model_id}")
     runtime_summary = inspect_torch_runtime()
     resolved_detection_batch_size = (
         detection_batch_size if detection_batch_size > 0 else runtime_summary.recommended_batch_size
@@ -212,8 +194,8 @@ def rebuild_runtime_assets(
     resolved_detection_preload_workers = (
         detection_preload_workers if detection_preload_workers > 0 else runtime_summary.recommended_preload_workers
     )
-    _emit_log(log_callback, f"[rebuild_runtime_assets] Runtime: {runtime_summary.short_label}")
-    _emit_log(
+    emit_log(log_callback, f"[rebuild_runtime_assets] Runtime: {runtime_summary.short_label}")
+    emit_log(
         log_callback,
         (
             "[rebuild_runtime_assets] Detection settings: "
@@ -224,7 +206,7 @@ def rebuild_runtime_assets(
             f"precision={detection_precision}."
         ),
     )
-    _emit_log(
+    emit_log(
         log_callback,
         (
             "[rebuild_runtime_assets] AOI build settings: "
@@ -235,7 +217,7 @@ def rebuild_runtime_assets(
         ),
     )
     if frame_step > every_n_frames:
-        _emit_log(
+        emit_log(
             log_callback,
             (
                 "[rebuild_runtime_assets] Note: export frame step is larger than the extraction stride. "
@@ -302,7 +284,7 @@ def rebuild_runtime_assets(
     )
 
     _emit_progress(progress_callback, "done", 1, 1, "Runtime assets rebuilt successfully.")
-    _emit_log(log_callback, "[rebuild_runtime_assets] Pipeline completed successfully.")
+    emit_log(log_callback, "[rebuild_runtime_assets] Pipeline completed successfully.")
 
     return {
         "video_path": str(video_path),

@@ -3,37 +3,33 @@ from __future__ import annotations
 """Run OWLv2 over extracted frames and normalize the detections output."""
 
 import argparse
-import re
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 from pathlib import Path
-from threading import RLock
 
 import pandas as pd
 
 from aoi360_pipeline.cache_roots import (
     configure_huggingface_cache_environment,
-    iter_huggingface_cache_roots,
-    resolve_huggingface_snapshot_path,
 )
-from aoi360_pipeline.detection_contract import DETECTION_COLUMNS, get_frame_index
+from aoi360_pipeline.callbacks import (
+    LogCallback,
+    ProgressCallback,
+    emit_log,
+    emit_progress,
+)
+from aoi360_pipeline.detection_contract import (
+    DETECTION_COLUMNS,
+    list_frame_paths,
+)
+from aoi360_pipeline.hf_backend import (
+    PretrainedAssetCache,
+    prepare_frame,
+)
+from aoi360_pipeline.prompts import split_class_prompt
 from aoi360_pipeline.runtime_environment import inspect_torch_runtime
 
 DEFAULT_MODEL_ID = "google/owlv2-base-patch16-ensemble"
-ProgressCallback = Callable[[int, int, str], None]
-LogCallback = Callable[[str], None]
-_PROCESSOR_CACHE: dict[tuple[str], object] = {}
-_MODEL_CACHE: dict[tuple[str, str, str], object] = {}
-_CACHE_LOCK = RLock()
-
-
-@dataclass(frozen=True)
-class PreparedFrame:
-    frame_path: Path
-    frame_index: int
-    image: object
-    target_size: tuple[int, int]
+_ASSETS = PretrainedAssetCache(display_name="OWLv2", log_prefix="[detect_owlv2]")
 
 
 def _lazy_import_owlv2_stack():
@@ -51,192 +47,16 @@ def _lazy_import_owlv2_stack():
     return torch, Image, tqdm, Owlv2ForObjectDetection, Owlv2Processor
 
 
-def _emit_log(log_callback: LogCallback | None, message: str) -> None:
-    if log_callback is not None:
-        log_callback(message)
-    else:
-        print(message)
-
-
-def _emit_progress(
-    progress_callback: ProgressCallback | None,
-    current: int,
-    total: int,
-    message: str,
-) -> None:
-    if progress_callback is not None:
-        progress_callback(current, total, message)
-
-
-def _load_pretrained_asset(pretrained_factory, model_id: str, *, log_callback: LogCallback | None = None, **kwargs):
-    primary_cache_root = configure_huggingface_cache_environment()
-    local_failures: list[str] = []
-    for cache_root in iter_huggingface_cache_roots():
-        snapshot_path = resolve_huggingface_snapshot_path(model_id, cache_root)
-        if snapshot_path is not None:
-            snapshot_kwargs = dict(kwargs)
-            snapshot_kwargs["local_files_only"] = True
-            try:
-                asset = pretrained_factory.from_pretrained(str(snapshot_path), **snapshot_kwargs)
-                _emit_log(log_callback, f"[detect_owlv2] Loaded assets from cached snapshot: {snapshot_path}")
-                return asset
-            except Exception as local_exception:
-                local_failures.append(f"{snapshot_path} -> {local_exception}")
-
-        local_kwargs = dict(kwargs)
-        local_kwargs["cache_dir"] = str(cache_root)
-        local_kwargs["local_files_only"] = True
-        try:
-            asset = pretrained_factory.from_pretrained(model_id, **local_kwargs)
-            _emit_log(log_callback, f"[detect_owlv2] Loaded assets from local cache root: {cache_root}")
-            return asset
-        except Exception as local_exception:
-            local_failures.append(f"{cache_root} -> {local_exception}")
-
-    _emit_log(
-        log_callback,
-        (
-            "[detect_owlv2] Local cache lookup failed; falling back to remote resolution. "
-            f"Tried: {' | '.join(local_failures)}"
-        ),
-    )
-
-    try:
-        return pretrained_factory.from_pretrained(model_id, cache_dir=str(primary_cache_root), **kwargs)
-    except Exception as remote_exception:
-        raise RuntimeError(
-            "OWLv2 could not be loaded from the local cache or from the remote Hugging Face repository. "
-            "If the model was already downloaded before, check that the cache is still available."
-        ) from remote_exception
-
-
-def _get_cached_processor(
-    *,
-    processor_factory,
-    model_id: str,
-    log_callback: LogCallback | None,
-):
-    cache_key = (model_id,)
-    with _CACHE_LOCK:
-        cached_processor = _PROCESSOR_CACHE.get(cache_key)
-
-    if cached_processor is not None:
-        _emit_log(log_callback, f"[detect_owlv2] Reusing cached processor for: {model_id}")
-        return cached_processor
-
-    built_processor = _load_pretrained_asset(processor_factory, model_id, log_callback=log_callback)
-    with _CACHE_LOCK:
-        cached_processor = _PROCESSOR_CACHE.setdefault(cache_key, built_processor)
-    return cached_processor
-
-
-def _get_cached_model(
-    *,
-    model_factory,
-    model_id: str,
-    device: str,
-    precision: str,
-    model_kwargs: dict[str, object],
-    log_callback: LogCallback | None,
-):
-    cache_key = (model_id, device, precision)
-    with _CACHE_LOCK:
-        cached_model = _MODEL_CACHE.get(cache_key)
-
-    if cached_model is not None:
-        cached_model.eval()
-        _emit_log(log_callback, f"[detect_owlv2] Reusing cached model for: {model_id} [{device}, {precision}]")
-        return cached_model
-
-    built_model = _load_pretrained_asset(
-        model_factory,
-        model_id,
-        log_callback=log_callback,
-        **model_kwargs,
-    ).to(device)
-    built_model.eval()
-
-    with _CACHE_LOCK:
-        cached_model = _MODEL_CACHE.setdefault(cache_key, built_model)
-
-    cached_model.eval()
-    return cached_model
-
-
-def _resolve_resampling_filter(image_module):
-    try:
-        return image_module.Resampling.BICUBIC
-    except AttributeError:  # pragma: no cover - Pillow compatibility shim
-        return image_module.BICUBIC
-
-
-def _resize_for_inference(image, image_module, max_width: int | None, max_height: int | None):
-    width, height = image.size
-    scale = 1.0
-
-    if max_width is not None and max_width > 0 and width > max_width:
-        scale = min(scale, max_width / width)
-    if max_height is not None and max_height > 0 and height > max_height:
-        scale = min(scale, max_height / height)
-
-    if scale >= 1.0:
-        return image
-
-    resized_width = max(1, int(round(width * scale)))
-    resized_height = max(1, int(round(height * scale)))
-    return image.resize((resized_width, resized_height), _resolve_resampling_filter(image_module))
-
-
-def _prepare_frame(
-    frame_path: Path,
-    image_module,
-    inference_max_width: int | None,
-    inference_max_height: int | None,
-) -> PreparedFrame:
-    with image_module.open(frame_path) as image_handle:
-        image = image_handle.convert("RGB")
-        target_size = (image.height, image.width)
-        inference_image = _resize_for_inference(
-            image=image,
-            image_module=image_module,
-            max_width=inference_max_width,
-            max_height=inference_max_height,
-        )
-
-    return PreparedFrame(
-        frame_path=frame_path,
-        frame_index=get_frame_index(frame_path),
-        image=inference_image,
-        target_size=target_size,
-    )
-
-
 def _parse_open_vocabulary_labels(text_prompt: str) -> tuple[list[str], dict[str, str]]:
-    prompt_tokens = re.split(r"[,\n]+|\.(?:\s|$)", text_prompt)
+    """OWLv2 scores captions better than bare class names: "person" -> "a photo of a person"."""
     query_labels: list[str] = []
     label_map: dict[str, str] = {}
-    seen_tokens: set[str] = set()
-
-    for token in prompt_tokens:
-        normalized_token = token.strip()
-        if not normalized_token:
-            continue
-
-        lowered_token = normalized_token.lower()
-        if lowered_token in seen_tokens:
-            continue
-
-        seen_tokens.add(lowered_token)
-        query_label = normalized_token
-        if not lowered_token.startswith(("a ", "an ", "the ")):
-            query_label = f"a photo of a {normalized_token}"
-
+    for class_name in split_class_prompt(text_prompt, "OWLv2"):
+        query_label = class_name
+        if not class_name.lower().startswith(("a ", "an ", "the ")):
+            query_label = f"a photo of a {class_name}"
         query_labels.append(query_label)
-        label_map[query_label] = normalized_token
-
-    if not query_labels:
-        raise ValueError("text_prompt must contain at least one non-empty class prompt for OWLv2.")
-
+        label_map[query_label] = class_name
     return query_labels, label_map
 
 
@@ -256,18 +76,18 @@ def prefetch_model_assets(
         resolved_precision = "fp32"
 
     cache_root = configure_huggingface_cache_environment()
-    _emit_log(log_callback, f"[detect_owlv2] Prefetching assets into local cache: {cache_root}")
+    emit_log(log_callback, f"[detect_owlv2] Prefetching assets into local cache: {cache_root}")
 
     model_kwargs = {}
     if device == "cuda" and resolved_precision == "fp16":
         model_kwargs["torch_dtype"] = torch.float16
 
-    _get_cached_processor(
+    _ASSETS.get_processor(
         processor_factory=Owlv2Processor,
         model_id=model_id,
         log_callback=log_callback,
     )
-    _get_cached_model(
+    _ASSETS.get_model(
         model_factory=Owlv2ForObjectDetection,
         model_id=model_id,
         device=device,
@@ -330,15 +150,15 @@ def detect_frames(
 
     query_labels, label_map = _parse_open_vocabulary_labels(text_prompt)
 
-    _emit_log(log_callback, f"[detect_owlv2] Runtime: {runtime_summary.short_label}")
-    _emit_log(log_callback, f"[detect_owlv2] Using device: {device}")
-    _emit_log(log_callback, f"[detect_owlv2] Model: {model_id}")
-    _emit_log(log_callback, f"[detect_owlv2] Local Hugging Face cache: {cache_root}")
-    _emit_log(log_callback, f"[detect_owlv2] Batch size: {effective_batch_size}")
-    _emit_log(log_callback, f"[detect_owlv2] Precision: {resolved_precision}")
-    _emit_log(log_callback, f"[detect_owlv2] Prompt classes: {', '.join(query_labels)}")
+    emit_log(log_callback, f"[detect_owlv2] Runtime: {runtime_summary.short_label}")
+    emit_log(log_callback, f"[detect_owlv2] Using device: {device}")
+    emit_log(log_callback, f"[detect_owlv2] Model: {model_id}")
+    emit_log(log_callback, f"[detect_owlv2] Local Hugging Face cache: {cache_root}")
+    emit_log(log_callback, f"[detect_owlv2] Batch size: {effective_batch_size}")
+    emit_log(log_callback, f"[detect_owlv2] Precision: {resolved_precision}")
+    emit_log(log_callback, f"[detect_owlv2] Prompt classes: {', '.join(query_labels)}")
     if text_threshold != 0.25:
-        _emit_log(
+        emit_log(
             log_callback,
             "[detect_owlv2] Note: text_threshold is not used by OWLv2 and is ignored in this backend.",
         )
@@ -347,12 +167,12 @@ def detect_frames(
     if device == "cuda" and resolved_precision == "fp16":
         model_kwargs["torch_dtype"] = torch.float16
 
-    processor = _get_cached_processor(
+    processor = _ASSETS.get_processor(
         processor_factory=Owlv2Processor,
         model_id=model_id,
         log_callback=log_callback,
     )
-    model = _get_cached_model(
+    model = _ASSETS.get_model(
         model_factory=Owlv2ForObjectDetection,
         model_id=model_id,
         device=device,
@@ -361,15 +181,15 @@ def detect_frames(
         log_callback=log_callback,
     )
 
-    frame_paths = sorted([*frames_dir.glob("*.jpg"), *frames_dir.glob("*.jpeg"), *frames_dir.glob("*.png")])
+    frame_paths = list_frame_paths(frames_dir)
     if not frame_paths:
         raise RuntimeError(f"No images found in: {frames_dir}")
 
     rows: list[dict[str, object]] = []
     total_frames = len(frame_paths)
-    _emit_progress(progress_callback, 0, total_frames, "Loading OWLv2 and preparing detections.")
+    emit_progress(progress_callback, 0, total_frames, "Loading OWLv2 and preparing detections.")
 
-    image_loader = lambda path: _prepare_frame(
+    image_loader = lambda path: prepare_frame(
         frame_path=path,
         image_module=Image,
         inference_max_width=inference_max_width,
@@ -434,7 +254,7 @@ def detect_frames(
                 )
 
             processed_index += 1
-            _emit_progress(
+            emit_progress(
                 progress_callback,
                 processed_index,
                 total_frames,
@@ -444,9 +264,9 @@ def detect_frames(
     detections = pd.DataFrame(rows, columns=DETECTION_COLUMNS)
     detections.to_csv(output_csv, index=False)
 
-    _emit_log(log_callback, f"[detect_owlv2] Frames processed: {len(frame_paths)}")
-    _emit_log(log_callback, f"[detect_owlv2] Detections exported: {len(detections)}")
-    _emit_log(log_callback, f"[detect_owlv2] CSV written to: {output_csv}")
+    emit_log(log_callback, f"[detect_owlv2] Frames processed: {len(frame_paths)}")
+    emit_log(log_callback, f"[detect_owlv2] Detections exported: {len(detections)}")
+    emit_log(log_callback, f"[detect_owlv2] CSV written to: {output_csv}")
     return detections
 
 

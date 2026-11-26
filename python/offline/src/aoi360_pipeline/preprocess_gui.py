@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """Desktop GUI for the offline preprocessing pipeline.
 
 Tk widgets must be updated on the main thread, so the pipeline runs in a worker
@@ -11,10 +12,23 @@ import threading
 import traceback
 from datetime import datetime
 from pathlib import Path
-from tkinter import BooleanVar, DoubleVar, IntVar, StringVar, Tk, filedialog, messagebox, ttk
+from tkinter import (
+    BooleanVar,
+    DoubleVar,
+    IntVar,
+    StringVar,
+    Tk,
+    filedialog,
+    messagebox,
+    ttk,
+)
 from tkinter.scrolledtext import ScrolledText
 
-from aoi360_pipeline.detectors import DEFAULT_DETECTOR, SUPPORTED_DETECTORS, resolve_default_model_id
+from aoi360_pipeline.detectors import (
+    DEFAULT_DETECTOR,
+    SUPPORTED_DETECTORS,
+    resolve_default_model_id,
+)
 from aoi360_pipeline.rebuild_runtime_assets import (
     derive_runtime_build_paths,
     find_repo_root,
